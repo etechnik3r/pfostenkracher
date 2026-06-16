@@ -540,22 +540,37 @@ function drawPlayer(cx, feetY, playerIdx, teamIdx, anim, frame, facing=1, opts={
 
   // Kopf
   const headY = ty - headR - 1;
-  px(-headR+1, headY, headR*2-2, headR*2-1, skin);
-  px(-headR+1, headY, headR*2-2, 2, skinSh===skinSh?shade(skin,0.12):skin); // sanftes Licht
-  px(headR-2, headY+2, 2, headR, skinSh);                 // Wangenschatten
-  // Augen
-  px(-2, headY+headR-1, 1, 2, '#23303f');
-  px(1,  headY+headR-1, 1, 2, '#23303f');
-  // Haare
-  px(-headR+1, headY-1, headR*2-2, 3, hair);
-  px(-headR+1, headY-1, headR*2-2, 1, shade(hair,0.25));
-  px(-headR, headY+1, 2, big?6:3, hair);                  // Seite
-  px(headR-2, headY+1, 2, big?6:3, hair);
-  if (big) { // Jonte: lange braune Haare
-    px(-headR-1, headY+1, 2, 9, hair); px(headR-1, headY+1, 2, 9, hair);
-    px(-headR-1, headY+8, 2, 2, hairSh); px(headR-1, headY+8, 2, 2, hairSh);
-  } else {   // Fiete: kurzer blonder Scheitel
-    px(-1, headY-2, 4, 2, hair);
+  if (opts.back) {
+    // Hinterkopf (Schütze läuft zum Tor): nur Haare, keine Augen
+    px(-headR+1, headY, headR*2-2, headR*2-1, hair);
+    px(-headR+1, headY, headR*2-2, 2, shade(hair,0.28));    // Lichtkante oben
+    px(-headR+1, headY+headR, headR*2-2, 1, hairSh);        // Haarsträhnen
+    px(-1, headY+headR*2-3, 3, 2, skin);                    // ein Stück Nacken
+    if (big) { // Jonte: lange Haare über den Nacken
+      px(-headR-1, headY+1, 2, 11, hair); px(headR-1, headY+1, 2, 11, hair);
+      px(-3, headY+headR+2, 6, 5, hair);
+      px(-3, headY+headR+5, 6, 2, hairSh);
+    } else {
+      px(-headR, headY+1, 2, 4, hair); px(headR-2, headY+1, 2, 4, hair);
+    }
+  } else {
+    px(-headR+1, headY, headR*2-2, headR*2-1, skin);
+    px(-headR+1, headY, headR*2-2, 2, shade(skin,0.12));    // sanftes Licht
+    px(headR-2, headY+2, 2, headR, skinSh);                 // Wangenschatten
+    // Augen
+    px(-2, headY+headR-1, 1, 2, '#23303f');
+    px(1,  headY+headR-1, 1, 2, '#23303f');
+    // Haare
+    px(-headR+1, headY-1, headR*2-2, 3, hair);
+    px(-headR+1, headY-1, headR*2-2, 1, shade(hair,0.25));
+    px(-headR, headY+1, 2, big?6:3, hair);                  // Seite
+    px(headR-2, headY+1, 2, big?6:3, hair);
+    if (big) { // Jonte: lange braune Haare
+      px(-headR-1, headY+1, 2, 9, hair); px(headR-1, headY+1, 2, 9, hair);
+      px(-headR-1, headY+8, 2, 2, hairSh); px(headR-1, headY+8, 2, 2, hairSh);
+    } else {   // Fiete: kurzer blonder Scheitel
+      px(-1, headY-2, 4, 2, hair);
+    }
   }
 
   if (anim==='kick' && f>=3) { px(3, legY+legA-1, 9, 3, '#dddddd'); /* Bewegungslinie */ }
@@ -567,6 +582,48 @@ function drawPlayer(cx, feetY, playerIdx, teamIdx, anim, frame, facing=1, opts={
 function drawShadow(cx, feetY, w) {
   ctx.fillStyle='rgba(0,0,0,0.28)';
   ctx.beginPath(); ctx.ellipse(cx, feetY+2, w, 3.5, 0, 0, Math.PI*2); ctx.fill();
+}
+
+// Hechtender Torwart: eine aufrechte, kompakte Figur wird per Rotation gekippt,
+// dadurch bleiben menschliche Proportionen erhalten (keine "Wurst").
+// (cx,cy) = Rumpfmitte (Drehpunkt). Gibt die Welt-Position der Handschuhe zurück.
+function keeperGlove(cx, cy, tilt, big){
+  const L = (big?7:6) + 9;
+  return { x: cx + Math.sin(tilt)*L, y: cy - Math.cos(tilt)*L };
+}
+function drawKeeperDive(cx, cy, pIdx, tilt){
+  const big = pIdx===1;
+  const shirt='#1faa4d', shirtL='#36c463', shirtSh='#0c7a36', shorts='#0d1a33', shortsSh='#081226';
+  const skin='#f2c39a', hair = pIdx===1?'#5a3a1c':'#e8c34a', hairSh = pIdx===1?'#3f280f':'#b9931f';
+  const sock='#f4f4f4', boot='#1c1c1c', glove='#f4d03f';
+  const th = big?14:12, tw = big?12:11, hipY = th/2;
+  ctx.save();
+  ctx.translate(cx, cy);
+  ctx.rotate(tilt);
+  // Beine (nachgezogen)
+  px(-5, hipY, 4, 9, shorts); px(-5,hipY+8,4,4,sock); px(-6,hipY+11,5,3,boot);
+  px(1,  hipY, 4, 8, shorts); px(1, hipY+7,4,4,sock); px(1, hipY+10,5,3,boot);
+  px(-6, hipY, 11, 2, shortsSh);
+  // Torso
+  px(-tw/2, -th/2, tw, th, shirt);
+  px(-tw/2, -th/2, tw, 2, shirtL);
+  px(-tw/2, th/2-2, tw, 2, shirtSh);
+  px(-tw/2, -2, tw, 1, '#0c5a26');
+  // Arme gestreckt nach oben (über den Kopf, zum Ball)
+  px(-tw/2-2, -th/2, 3, 10, shirt);  px(-tw/2-2, -th/2-7, 3, 8, skin);
+  px(tw/2-1,  -th/2, 3, 10, shirt);  px(tw/2-1,  -th/2-7, 3, 8, skin);
+  // Handschuhe
+  px(-tw/2-2, -th/2-11, 4, 5, glove); px(-tw/2-2, -th/2-11, 4, 2, '#fff0b0');
+  px(tw/2-1,  -th/2-11, 4, 5, glove); px(tw/2-1,  -th/2-11, 4, 2, '#fff0b0');
+  // Kopf zwischen den Armen – von schräg hinten, nur Haare
+  const hy = -th/2-12;
+  px(-3, hy, 6, 6, skin);
+  px(-3, hy-1, 6, 3, hair);
+  px(-3, hy, 2, 5, hair); px(1, hy, 2, 5, hair);
+  px(-3, hy+4, 6, 2, hairSh);
+  if (big){ px(-4,hy+1,2,7,hair); px(2,hy+1,2,7,hair); }
+  ctx.restore();
+  return keeperGlove(cx, cy, tilt, big);
 }
 
 function shade(hex, amt) {
@@ -1148,42 +1205,54 @@ function drawShot(){
   if (ev==='wide') target = { x:(missSide<0?GOAL.x-22:GOAL.x+GOAL.w+22), y:sCenter.y-6 };
   if (ev==='slip-shooter') target = { x:SPOT.x+(gs.slipDir||-1)*30, y:SPOT.y-18 };
 
-  // Torwart: bei einer PARADE hechtet er ZUM BALL (sonst zu seiner geratenen Ecke
-  // und wird dadurch sichtbar geschlagen)
+  // ── Torwart: realistischer Hechtsprung (aufrechte Figur wird gekippt) ──
+  // Bei einer PARADE hechtet er ZUM BALL; sonst zu seiner geratenen Ecke (sichtbar geschlagen).
+  const kPlayer = 1-gs.shooter, kBig = (kPlayer===1);
   const kZoneVis = isSave ? gs.shooterZone : gs.keeperZone;
   const kCenter = zoneCenter(GOAL, kZoneVis);
+  const kRow = (kZoneVis/ZC)|0;
   const groundY = GOAL_LINE-2;
-  const launch = T.kick + 4;                            // kurze Reaktionszeit: erst springen, wenn der Ball unterwegs ist
-  let kx=W/2, ky=groundY, kReach=0;
-  const kFacing = (kZoneVis%ZC)<2 ? 1 : -1;
-  const reachY = kCenter.y+14;                          // Höhe, auf der der Ball erreicht wird
+  const standY  = groundY-17;                          // Rumpfmitte im Stand
+  const launch  = T.kick + 4;                          // kurze Reaktionszeit
+  const sideSign = kCenter.x < W/2 ? -1 : (kCenter.x > W/2 ? 1 : 1);
+  const tiltMag  = kRow===2 ? 1.5 : (kRow===0 ? 1.02 : 1.28);   // tiefe Ecke flacher, hohe Ecke aufrechter
+  const tiltFull = sideSign * tiltMag;
+  const Lr = (kBig?7:6)+9;                              // Rumpfmitte -> Handschuhe
+  const pivotEndX = kCenter.x - Math.sin(tiltFull)*Lr;
+  const pivotEndY = kCenter.y + Math.cos(tiltFull)*Lr;
+  let kDiving=false, pivX=W/2, pivY=standY, tilt=0;
   if (t < launch){
-    ky = groundY + Math.sin(t*0.16)*1.5;               // bereitschaftliches Wippen, noch am Boden
+    pivY = standY + Math.sin(t*0.16)*1.2;              // bereitschaftliches Wippen
   } else if (t <= T.reach){
+    kDiving=true;
     const kp = clamp((t-launch)/(T.reach-launch),0,1);
-    const ke = easeIn(kp);                             // erst kaum bewegen (lauern), dann explosiv zum Ball
-    kx = lerp(W/2, kCenter.x, ke);
-    ky = lerp(groundY, reachY, ke) - Math.sin(kp*Math.PI)*15;   // Absprung-Bogen, am Ende exakt auf Ballhöhe
-    kReach = kp;
+    const ke = kp*kp*(3-2*kp);                         // smoothstep: sauberer Absprung, Ankunft am Ball
+    pivX = lerp(W/2, pivotEndX, ke);
+    pivY = lerp(standY, pivotEndY, ke);
+    tilt = tiltFull * ke;
   } else {
-    // nach dem Erreichen zieht die Schwerkraft den Keeper zu Boden -> er fällt & landet
-    kReach = 1;
+    kDiving=true;
     const ft = t - T.reach;
-    kx = kCenter.x;
-    ky = Math.min(groundY+3, reachY + 0.05*ft*ft);
+    pivX = pivotEndX;
+    pivY = Math.min(groundY-5, pivotEndY + 0.07*ft*ft); // Schwerkraft -> fällt zu Boden & landet
+    tilt = tiltFull;
   }
-  // Landezeitpunkt (für Staubwolke)
-  const ftLand = Math.sqrt(Math.max(0,(groundY-reachY)/0.05));
-  const landT  = T.reach + ftLand;
+  const kGlove = keeperGlove(pivX, pivY, tilt, kBig);
+  const landT  = T.reach + Math.sqrt(Math.max(0,(groundY-5-pivotEndY)/0.07));
 
-  // Schütze
-  let shooterAnim='ready';
-  let shX=SPOT.x-15, shY=SPOT.y+36;
-  if (t < T.setup){ shooterAnim='ready'; shX=SPOT.x-15; shY=SPOT.y+36; }
-  else if (t < T.runEnd){ const p=easeIn((t-T.setup)/(T.runEnd-T.setup)); shooterAnim='run'; shX=lerp(SPOT.x-15,SPOT.x-9,p); shY=lerp(SPOT.y+36,SPOT.y+8,p); }
-  else if (t < T.kick+10){ shooterAnim='kick'; shX=SPOT.x-9; shY=SPOT.y+7; }
-  else { shX=SPOT.x-9; shY=SPOT.y+7; shooterAnim = (t>T.reach+8) ? (isGoalNet?'cheer':'sad') : 'idle'; }
-  if (ev==='slip-shooter' && t>=T.runEnd) shooterAnim='slip';
+  // ── Schütze: steht zuerst (Gesicht zur Kamera), dreht sich um, läuft an, schießt ──
+  let shooterAnim='idle', shX=SPOT.x-15, shY=SPOT.y+38, shBack=false, squash=1;
+  const turnStart = T.setup-16;
+  if (t < turnStart){ shooterAnim='idle'; shBack=false; }
+  else if (t < T.setup){                               // Umdrehen Richtung Tor
+    const u=(t-turnStart)/16;
+    squash = Math.max(0.18, Math.abs(Math.cos(u*Math.PI)));
+    shBack = u>0.5;
+  }
+  else if (t < T.runEnd){ const p=easeIn((t-T.setup)/(T.runEnd-T.setup)); shooterAnim='run'; shBack=true; shX=lerp(SPOT.x-15,SPOT.x-9,p); shY=lerp(SPOT.y+38,SPOT.y+8,p); }
+  else if (t < T.kick+10){ shooterAnim='kick'; shBack=true; shX=SPOT.x-9; shY=SPOT.y+7; }
+  else { shX=SPOT.x-9; shY=SPOT.y+7; shBack=false; shooterAnim=(t>T.reach+8)?(isGoalNet?'cheer':'sad'):'idle'; }
+  if (ev==='slip-shooter' && t>=T.runEnd){ shooterAnim='slip'; shBack=true; }
 
   // Ball
   let ballR=5, ballX=SPOT.x, ballY=SPOT.y, ballVisible=true;
@@ -1194,7 +1263,7 @@ function drawShot(){
     ballY = lerp(SPOT.y, target.y, fp) - Math.sin(fp*Math.PI)*16;
     ballR = lerp(5, 2.6, fp);
     if (t>=T.reach){
-      if (isSave){ ballX=kx+(kFacing>0?-15:15); ballY=ky-4; ballR=3.0; }          // in den Handschuhen, fällt mit dem Keeper
+      if (isSave){ ballX=kGlove.x; ballY=kGlove.y; ballR=3.2; }                    // in den Handschuhen, fällt mit dem Keeper
       else if (ev==='post'){ const bp=clamp((t-T.reach)/30,0,1); ballX=lerp(target.x,target.x+(target.x<W/2?22:-22),bp); ballY=lerp(target.y,SPOT.y-8,bp)-Math.sin(bp*Math.PI)*9; }
       else if (ev==='over'){ const bp=clamp((t-T.reach)/22,0,1); ballY=lerp(target.y,GOAL.y-32,bp); ballR=lerp(2.6,1.5,bp); if (bp>=1) ballVisible=false; }
       else if (ev==='wide'){ const bp=clamp((t-T.reach)/26,0,1); ballX=lerp(target.x,target.x+missSide*34,bp); ballY=lerp(target.y,target.y+18,bp); ballR=lerp(2.6,2.1,bp); }
@@ -1210,29 +1279,32 @@ function drawShot(){
     ctx.beginPath(); ctx.arc(sCenter.x, sCenter.y, 5+np*9, 0, 7); ctx.fill();
   }
 
-  // Zeichnen: Bodenschatten des Keepers (bleibt am Boden, schrumpft beim Sprung)
-  if (t>launch){
-    const hgt = clamp((groundY-ky)/45,0,1);
+  // Bodenschatten des Keepers (bleibt am Boden, schrumpft beim Sprung)
+  if (kDiving){
+    const hgt = clamp((groundY-pivY)/55,0,1);
     ctx.fillStyle='rgba(0,0,0,'+(0.24*(1-hgt)+0.04).toFixed(3)+')';
-    ctx.beginPath(); ctx.ellipse(kx, groundY+2, 12*(1-0.45*hgt), 3.2*(1-0.45*hgt), 0, 0, 7); ctx.fill();
+    ctx.beginPath(); ctx.ellipse(pivX, groundY+2, 12*(1-0.4*hgt), 3.2*(1-0.4*hgt), 0, 0, 7); ctx.fill();
   }
-  // Keeper, dann Ball darüber -> bei Parade liegt der Ball in den Händen
-  // Pose: erst noch stehend/lauernd, erst beim echten Abheben in die Hecht-Pose
-  const keeperPose = (kReach>0.34 || (t>T.reach)) ? 'dive' : 'ready';
-  drawPlayer(kx, ky, 1-gs.shooter, 1-gs.shooter, keeperPose, gs.t, kFacing, {keeper:true, noShadow:(t>launch)});
+  // Keeper zeichnen: stehend bis zum Absprung, danach gekippte Hechtfigur
+  if (kDiving) drawKeeperDive(pivX, pivY, kPlayer, tilt);
+  else drawPlayer(W/2, groundY, kPlayer, kPlayer, 'ready', gs.t, 1, {keeper:true});
   // Landungs-Staubwolke (dezenter Eyecatcher)
   if (t>landT-1 && t<landT+22){
-    const d=clamp((t-landT)/22,0,1), dir=kFacing>0?-1:1;
+    const d=clamp((t-landT)/22,0,1), dir=-sideSign;
     for (let i=0;i<6;i++){
       const a=Math.PI*(0.12+0.72*i/5), rad=3+d*16;
       ctx.fillStyle='rgba(228,231,218,'+(0.4*(1-d)).toFixed(3)+')';
       ctx.beginPath();
-      ctx.arc(kx+Math.cos(a)*rad*dir, groundY+3-Math.sin(a)*rad*0.45, 1.4+d*2.3, 0, 7);
+      ctx.arc(pivX+Math.cos(a)*rad*dir, groundY+3-Math.sin(a)*rad*0.45, 1.4+d*2.3, 0, 7);
       ctx.fill();
     }
   }
   if (ballVisible) drawBall(ballX|0, ballY|0, Math.max(1.5,ballR));
-  drawPlayer(shX, shY, gs.shooter, gs.shooter, shooterAnim, gs.t, 1);
+  // Schütze (mit Umdreh-Stauchung), eigener Schatten
+  ctx.save(); ctx.translate(shX, shY); ctx.scale(squash,1);
+  drawPlayer(0, 0, gs.shooter, gs.shooter, shooterAnim, gs.t, 1, {back:shBack, noShadow:true});
+  ctx.restore();
+  drawShadow(shX, shY, gs.shooter===1?12:10);
 
   // Zeitlupe-Hinweis
   if (shotTimeInc(t)<1 && t<T.reach+40){
