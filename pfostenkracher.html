@@ -615,13 +615,15 @@ function drawKeeperDive(cx, cy, pIdx, tilt){
   // Handschuhe
   px(-tw/2-2, -th/2-11, 4, 5, glove); px(-tw/2-2, -th/2-11, 4, 2, '#fff0b0');
   px(tw/2-1,  -th/2-11, 4, 5, glove); px(tw/2-1,  -th/2-11, 4, 2, '#fff0b0');
-  // Kopf zwischen den Armen – von schräg hinten, nur Haare
+  // Kopf zur Kamera/zum Schützen gewandt: Gesicht mit Augen, Haare oben
   const hy = -th/2-12;
-  px(-3, hy, 6, 6, skin);
-  px(-3, hy-1, 6, 3, hair);
-  px(-3, hy, 2, 5, hair); px(1, hy, 2, 5, hair);
-  px(-3, hy+4, 6, 2, hairSh);
-  if (big){ px(-4,hy+1,2,7,hair); px(2,hy+1,2,7,hair); }
+  px(-3, hy, 6, 6, skin);                          // Gesicht
+  px(-3, hy, 6, 2, shade(skin,0.1));               // Licht
+  px(-2, hy+3, 1, 2, '#23303f'); px(1, hy+3, 1, 2, '#23303f');   // Augen
+  px(-3, hy-1, 6, 3, hair);                        // Haaransatz
+  px(-3, hy-1, 6, 1, shade(hair,0.25));
+  px(-3, hy, 1, 3, hair); px(2, hy, 1, 3, hair);   // Seiten
+  if (big){ px(-4,hy+1,1,8,hair); px(3,hy+1,1,8,hair); }   // Jonte: lange Haare seitlich
   ctx.restore();
   return keeperGlove(cx, cy, tilt, big);
 }
@@ -1220,21 +1222,23 @@ function drawShot(){
   const Lr = (kBig?7:6)+9;                              // Rumpfmitte -> Handschuhe
   const pivotEndX = kCenter.x - Math.sin(tiltFull)*Lr;
   const pivotEndY = kCenter.y + Math.cos(tiltFull)*Lr;
-  let kDiving=false, pivX=W/2, pivY=standY, tilt=0;
+  let kDiving=false, pivX=W/2, pivY=standY, tilt=0, crouch=0;
   if (t < launch){
-    pivY = standY + Math.sin(t*0.16)*1.2;              // bereitschaftliches Wippen
+    // Bereitschaft; in den letzten Frames leichtes In-die-Knie-Gehen (Vorladen)
+    crouch = clamp((t-(launch-7))/7, 0, 1) * 3;
   } else if (t <= T.reach){
     kDiving=true;
-    const kp = clamp((t-launch)/(T.reach-launch),0,1);
-    const ke = kp*kp*(3-2*kp);                         // smoothstep: sauberer Absprung, Ankunft am Ball
-    pivX = lerp(W/2, pivotEndX, ke);
-    pivY = lerp(standY, pivotEndY, ke);
-    tilt = tiltFull * ke;
+    const p = clamp((t-launch)/(T.reach-launch),0,1);
+    const eo = 1-(1-p)*(1-p);                            // easeOut: explosiver Absprung, dann ausrollen
+    pivX = lerp(W/2, pivotEndX, eo);                      // sofort seitwärts (kein Hochspringen-dann-Drehen)
+    pivY = lerp(standY, pivotEndY, eo) - 8*Math.sin(p*Math.PI);   // flacher Absprung-Bogen
+    const tp = clamp(p/0.4,0,1);                          // Körperwinkel SOFORT beim Absprung setzen,
+    tilt = tiltFull * (tp*tp*(3-2*tp));                   // danach gehalten -> kein Drehen in der Luft
   } else {
     kDiving=true;
     const ft = t - T.reach;
     pivX = pivotEndX;
-    pivY = Math.min(groundY-5, pivotEndY + 0.07*ft*ft); // Schwerkraft -> fällt zu Boden & landet
+    pivY = Math.min(groundY-5, pivotEndY + 0.07*ft*ft);   // Schwerkraft -> fällt zu Boden & landet
     tilt = tiltFull;
   }
   const kGlove = keeperGlove(pivX, pivY, tilt, kBig);
@@ -1287,7 +1291,7 @@ function drawShot(){
   }
   // Keeper zeichnen: stehend bis zum Absprung, danach gekippte Hechtfigur
   if (kDiving) drawKeeperDive(pivX, pivY, kPlayer, tilt);
-  else drawPlayer(W/2, groundY, kPlayer, kPlayer, 'ready', gs.t, 1, {keeper:true});
+  else drawPlayer(W/2, groundY+crouch, kPlayer, kPlayer, 'ready', gs.t, 1, {keeper:true});
   // Landungs-Staubwolke (dezenter Eyecatcher)
   if (t>landT-1 && t<landT+22){
     const d=clamp((t-landT)/22,0,1), dir=-sideSign;
