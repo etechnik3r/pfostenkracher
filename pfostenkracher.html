@@ -543,31 +543,51 @@ function drawPitch() {
     ctx.fillStyle = i%2===0 ? '#2f9e3a' : '#268a31';
     ctx.fillRect(0, y0, W, y1-y0+1);
   }
-  // ── Linien (Perspektive: Tor oben, zur Kamera hin breiter) ──
-  ctx.strokeStyle='rgba(255,255,255,0.92)'; ctx.lineWidth=2;
-  ctx.lineJoin='round';
-  const flY = 348;                                   // 16-Meter-Linie
-  const sixY = GOAL_LINE + 30;                        // 5-Meter-Linie
-  // Strafraum (Trapez)
+  // ── Linien (Perspektive: Tor oben, zur Kamera hin minimal breiter) ──
+  const gly = GOAL_LINE;             // Torauslinie
+  const box16Y = 336;                // 16-Meter-Linie (vorne)
+  const box5Y  = 214;                // 5-Meter-Linie (vorne)
+  ctx.strokeStyle='rgba(255,255,255,0.92)'; ctx.lineWidth=2; ctx.lineJoin='round'; ctx.lineCap='round';
+
+  // Torauslinie über die ganze Breite (verbindet alles)
+  ctx.beginPath(); ctx.moveTo(0,gly); ctx.lineTo(W,gly); ctx.stroke();
+
+  // Strafraum (16 m) – breiter als das Tor, leicht nach unten geöffnet
   ctx.beginPath();
-  ctx.moveTo(GOAL.x-20, GOAL_LINE);
-  ctx.lineTo(20, flY);
-  ctx.lineTo(W-20, flY);
-  ctx.lineTo(GOAL.x+GOAL.w+20, GOAL_LINE);
+  ctx.moveTo(18, gly); ctx.lineTo(6, box16Y);
+  ctx.lineTo(W-6, box16Y); ctx.lineTo(W-18, gly);
   ctx.stroke();
-  // 5-Meter-Raum (kleines Trapez)
+
+  // Torraum (5 m) – schmal, dicht am Tor (außerhalb der Pfosten)
   ctx.beginPath();
-  ctx.moveTo(GOAL.x-4, GOAL_LINE);
-  ctx.lineTo(GOAL.x-12, sixY);
-  ctx.lineTo(GOAL.x+GOAL.w+12, sixY);
-  ctx.lineTo(GOAL.x+GOAL.w+4, GOAL_LINE);
+  ctx.moveTo(GOAL.x-8, gly); ctx.lineTo(GOAL.x-16, box5Y);
+  ctx.lineTo(GOAL.x+GOAL.w+16, box5Y); ctx.lineTo(GOAL.x+GOAL.w+8, gly);
   ctx.stroke();
-  // Strafraumbogen ("D"): wölbt sich unter die 16-m-Linie hinaus (zur Kamera)
+
+  // Strafraumbogen ("D") – wölbt sich unter die 16-m-Linie hinaus zur Kamera
   ctx.beginPath();
-  ctx.ellipse(SPOT.x, SPOT.y, 60, 58, 0, 0.97, Math.PI-0.97);
+  ctx.ellipse(SPOT.x, SPOT.y, 60, 50, 0, 0.80, Math.PI-0.80);
   ctx.stroke();
+
   // Elfmeterpunkt
   ctx.fillStyle='#fff'; ctx.beginPath(); ctx.arc(SPOT.x, SPOT.y, 2.2, 0, 7); ctx.fill();
+
+  // Eckfahnen an der Torauslinie
+  drawCornerFlag(7, gly, false);
+  drawCornerFlag(W-7, gly, true);
+}
+
+function drawCornerFlag(x, y, right){
+  const dir = right ? -1 : 1;
+  px(x, y-15, 1, 15, '#eef2f6');                       // Mast
+  px(x-1, y-1, 3, 2, '#cfd6de');                        // Fuß
+  const wave = Math.sin((gs.t||0)*0.12 + (right?1:0))*1.2;
+  ctx.fillStyle = '#e23b3b';
+  ctx.beginPath();
+  ctx.moveTo(x+dir, y-15);
+  ctx.lineTo(x+dir*9, y-13+wave);
+  ctx.lineTo(x+dir, y-9);
+  ctx.closePath(); ctx.fill();
 }
 
 function drawGoal(withNet=true) {
@@ -929,10 +949,10 @@ function drawShot(){
 
   // SFX-Trigger
   if (t>=T.setup && !whistleDone){ SFX.whistle(); whistleDone=true; }
-  if (t>=T.kick && !kickPlayed){ SFX.kick(); kickPlayed=true; gs.shake=2.5; }
+  if (t>=T.kick && !kickPlayed){ SFX.kick(); kickPlayed=true; }   // kein Kamera-Wackeln beim Schuss
   if (t>=T.reach && !sfxPlayed){
     sfxPlayed=true;
-    if (isGoalNet){ SFX.goal(); spawnConfetti(50); gs.shake=5; }
+    if (isGoalNet){ SFX.goal(); spawnConfetti(50); gs.shake=2; }   // nur dezenter Impuls beim Einschlag
     else if (ev==='post') SFX.post();
     else if (ev==='over') SFX.miss();
     else if (ev==='slip-shooter') SFX.slip();
