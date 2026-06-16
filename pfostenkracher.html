@@ -325,7 +325,7 @@ function newSession() {
     aimTimer:7, aimTick:null, aimPhase:'shooter',
     handoffTarget:0, handoffIsShooter:true,
     chooseOrder:[0,1], choosePhase:0, countryScroll:0,
-    shotResult:null, shotT:0, pendingAdvance:false,
+    shotResult:null, shotT:0, pendingAdvance:false, isReplay:false,
     confetti:[], shake:0,
   };
 }
@@ -392,7 +392,7 @@ function drawPlayer(cx, feetY, playerIdx, teamIdx, anim, frame, facing=1, opts={
     else px(-28,-5,4,4,skin);
     ctx.restore();
     ctx.restore();
-    drawShadow(cx, feetY, 16);
+    if (!opts.noShadow) drawShadow(cx, feetY, 16);
     return;
   }
 
@@ -465,7 +465,7 @@ function drawPlayer(cx, feetY, playerIdx, teamIdx, anim, frame, facing=1, opts={
   if (anim==='kick' && f>=3) { px(3, legY+legA-1, 9, 3, '#dddddd'); /* Bewegungslinie */ }
 
   ctx.restore();
-  drawShadow(cx, feetY, big?12:10);
+  if (!opts.noShadow) drawShadow(cx, feetY, big?12:10);
 }
 
 function drawShadow(cx, feetY, w) {
@@ -748,53 +748,106 @@ function drawCountry(){
   });
 }
 
-function bootIcon(cx,cy){ // kleiner Fußballschuh
-  px(cx-6,cy-3,9,4,'#1c1c1c'); px(cx-6,cy+1,13,3,'#1c1c1c'); px(cx-6,cy-3,9,1,'#3a3a3a'); px(cx+5,cy+3,4,1,'#111');
+// ─── GROSSE ROLLEN-ICONS ──────────────────────────────────────────────────────
+function drawGloveBig(cx, cy){ // Torwart-Handschuh, aufrecht
+  const Y='#ecc636', YL='#ffe27a', YD='#b8951f', NV='#26365c', NVL='#3b5183';
+  ctx.save(); ctx.translate(cx,cy);
+  // Stulpe
+  ctx.fillStyle=NV;  rr(-20,16,40,16,5); ctx.fill();
+  ctx.fillStyle=NVL; rr(-20,16,40,5,3); ctx.fill();
+  ctx.fillStyle=Y;   rr(-9,23,18,5,2); ctx.fill();           // Verschluss
+  // Finger (4)
+  for (let i=0;i<4;i++){ const fx=-19+i*10;
+    ctx.fillStyle=YD; rr(fx-1,-33,10,31,4); ctx.fill();
+    ctx.fillStyle=Y;  rr(fx,-32,8,29,4); ctx.fill();
+    ctx.fillStyle=YL; rr(fx+1,-31,3,13,2); ctx.fill();
+  }
+  // Daumen
+  ctx.fillStyle=YD; rr(15,-8,15,16,7); ctx.fill();
+  ctx.fillStyle=Y;  rr(16,-7,13,14,6); ctx.fill();
+  ctx.fillStyle=YL; rr(19,-5,3,9,2); ctx.fill();
+  // Handfläche
+  ctx.fillStyle=YD; rr(-21,-12,42,30,9); ctx.fill();
+  ctx.fillStyle=Y;  rr(-20,-11,40,28,8); ctx.fill();
+  ctx.fillStyle=YL; rr(-16,-9,17,9,4); ctx.fill();
+  ctx.fillStyle=YD; rr(-20,9,40,8,7); ctx.fill();
+  // Daumenfalte
+  ctx.strokeStyle=YD; ctx.lineWidth=1.5;
+  ctx.beginPath(); ctx.arc(9,2,9,-1.1,1.0); ctx.stroke();
+  ctx.restore();
 }
-function gloveIcon(cx,cy){ // Torwarthandschuh
-  px(cx-4,cy-4,8,9,'#f4d03f'); px(cx-4,cy-4,8,2,'#fff0b0');
-  px(cx-4,cy-7,2,4,'#f4d03f'); px(cx-1,cy-8,2,5,'#f4d03f'); px(cx+2,cy-7,2,4,'#f4d03f');
-  px(cx-4,cy+5,8,2,'#1c2a4a');
+function drawBootBig(cx, cy){ // Fußballschuh, Spitze nach rechts
+  const B='#23232c', BL='#41414f', BD='#141419', WH='#eef0f6', AC='#e23b3b';
+  ctx.save(); ctx.translate(cx,cy);
+  // Sohle + Stollen
+  ctx.fillStyle=BD; rr(-25,10,53,9,4); ctx.fill();
+  for (let i=0;i<5;i++){ ctx.fillStyle=BD; rr(-21+i*11,18,5,4,1); ctx.fill(); }
+  // Schaft / Knöchel
+  ctx.fillStyle=B;  rr(-27,-17,18,23,7); ctx.fill();
+  ctx.fillStyle=BL; rr(-25,-15,7,16,4); ctx.fill();
+  // Körper
+  ctx.fillStyle=B;  rr(-23,-6,46,18,8); ctx.fill();
+  // Spitze
+  ctx.fillStyle=B;  rr(13,-3,17,15,8); ctx.fill();
+  ctx.fillStyle=BL; rr(15,-1,9,5,3); ctx.fill();
+  // Glanz oben
+  ctx.fillStyle=BL; rr(-21,-4,30,5,3); ctx.fill();
+  // Akzentstreifen
+  ctx.fillStyle=AC; rr(-7,3,24,4,2); ctx.fill();
+  // Schnürung
+  for (let i=0;i<3;i++){ ctx.fillStyle=WH; rr(-5+i*7,-3,4,2,1); ctx.fill(); }
+  ctx.restore();
+}
+// Flagge + Teamname zentriert als Gruppe
+function flagTeam(name, fl, cy, col='#9fb6d6'){
+  const fw=24, fh=15, gap=6, tw=textWidth(name,1);
+  const total=fw+gap+tw, sx=Math.round(W/2-total/2);
+  drawFlag(fl, sx, cy-fh/2, fw, fh);
+  pixelText(name, sx+fw+gap, cy-3, col, 1);
 }
 
 function drawHandoff(){
-  ctx.fillStyle='#070b16'; ctx.fillRect(0,0,W,H);
-  drawStadium();
-  ctx.fillStyle='rgba(7,11,22,0.88)'; ctx.fillRect(0,52,W,H-52);
+  // Ruhiger, einheitlicher Hintergrund (kein wuseliges Stadion)
+  const bg=ctx.createLinearGradient(0,0,0,H);
+  bg.addColorStop(0,'#0d1626'); bg.addColorStop(1,'#070d18');
+  ctx.fillStyle=bg; ctx.fillRect(0,0,W,H);
 
-  const target = gs.handoffIsShooter ? gs.shooter : (1-gs.shooter);
   const isSh = gs.handoffIsShooter;
-  const accent = isSh ? '#3fcf6a' : '#4b9bff';
+  const target = isSh ? gs.shooter : (1-gs.shooter);
+  const accent = isSh ? '#46d27a' : '#4ea0ff';
+  const accentDim = isSh ? 'rgba(70,210,122,0.14)' : 'rgba(78,160,255,0.14)';
+  const MUT = '#8aa0c0';
 
-  // Anpfiff-Banner beim allerersten Schuss
-  if (gs.firstKick){
-    ctx.fillStyle='rgba(255,210,63,0.14)'; rr(20,66,W-40,20,5); ctx.fill();
-    textC('LOSENTSCHEID: '+NAMES[gs.firstShooter]+' BEGINNT', W/2, 72, '#ffd23f', 1);
-  }
+  // Runden-Anzeige (dezent oben)
+  const roundLabel = gs.suddenDeath ? 'VERLÄNGERUNG' : 'RUNDE '+(gs.round+1)+' / '+REG;
+  textC(roundLabel, W/2, 28, MUT, 1);
 
-  textC('GERÄT WEITERGEBEN AN', W/2, 98, '#9fb6d6', 1);
-  textC(NAMES[target], W/2, 112, '#ffd23f', 3);
+  // Kopf: Aufforderung + Name (klare, abgestufte Hierarchie)
+  textC('GERÄT WEITERGEBEN AN', W/2, 54, MUT, 1);
+  textC(NAMES[target], W/2, 70, '#ffd23f', 3);
 
-  // große, klar farbcodierte Rollen-Karte
-  const cardY=152, cardH=120;
-  ctx.fillStyle = isSh ? 'rgba(63,207,106,0.14)' : 'rgba(75,155,255,0.14)';
-  rr(24, cardY, W-48, cardH, 10); ctx.fill();
-  ctx.strokeStyle=accent; ctx.lineWidth=2; rr(24, cardY, W-48, cardH, 10); ctx.stroke();
+  // Rollen-Karte
+  const cx0=26, cy0=118, cw=W-52, ch=206;
+  ctx.fillStyle=accentDim; rr(cx0,cy0,cw,ch,12); ctx.fill();
+  ctx.strokeStyle=accent; ctx.lineWidth=2; rr(cx0+1,cy0+1,cw-2,ch-2,11); ctx.stroke();
 
-  drawPlayer(W/2-44, cardY+96, target, target, 'ready', gs.t, 1, isSh?{}:{keeper:true});
-  if (isSh) bootIcon(W/2+44, cardY+40); else gloveIcon(W/2+44, cardY+40);
+  // Großes, eindeutiges Icon
+  if (isSh) drawBootBig(W/2, cy0+58); else drawGloveBig(W/2, cy0+62);
 
-  textC(isSh?'SCHÜTZE':'TORWART', W/2+30, cardY+58, accent, 2);
-  textC(isSh?'DU SCHIESST' : 'DU HÄLTST', W/2, cardY+cardH-16, '#ffffff', 2);
+  // Rolle (eine Akzentfarbe, eine Größe)
+  textC(isSh?'SCHÜTZE':'TORWART', W/2, cy0+108, accent, 3);
+  textC(isSh?'DU SCHIESST':'DU HÄLTST', W/2, cy0+140, '#cfe0f7', 1);
 
-  textC((isSh?'TEAM ':'IM TOR FÜR ')+gs.teams[target].name, W/2, cardY+cardH+10, '#9fb6d6', 1);
+  // Trenner + Team (innerhalb der Karte, kein Überstand)
+  ctx.strokeStyle='rgba(255,255,255,0.10)'; ctx.lineWidth=1;
+  ctx.beginPath(); ctx.moveTo(cx0+22, cy0+160); ctx.lineTo(cx0+cw-22, cy0+160); ctx.stroke();
+  flagTeam(gs.teams[target].name, gs.teams[target], cy0+180, MUT);
 
-  const rl = gs.suddenDeath ? 'VERLÄNGERUNG' : 'RUNDE '+(gs.round+1)+' / '+REG;
-  textC(rl, W/2, cardY+cardH+24, '#7f93b4', 1);
+  // Erstschuss-Hinweis (dezent unter der Karte)
+  if (gs.firstKick) textC('LOSENTSCHEID · '+NAMES[gs.firstShooter]+' BEGINNT', W/2, cy0+ch+16, accent, 1);
 
   buttons=[];
-  if ((gs.t>>4)&1) button('go', W/2-64, 350, 128, 32, 'BEREIT!', accent, '#04210f');
-  else { buttons.push({id:'go',x:W/2-64,y:350,w:128,h:32}); textC('TIPPEN WENN BEREIT', W/2, 360, '#465875', 1); }
+  button('go', W/2-66, cy0+ch+30, 132, 32, 'BEREIT', accent, '#04210f');
 }
 
 function drawAim(){
@@ -892,17 +945,27 @@ function drawShot(){
   // und wird dadurch sichtbar geschlagen)
   const kZoneVis = isSave ? gs.shooterZone : gs.keeperZone;
   const kCenter = zoneCenter(GOAL, kZoneVis);
-  const keeperBaseY = GOAL_LINE-2;
-  let kx=W/2, ky=keeperBaseY, kReach=0;
+  const groundY = GOAL_LINE-2;
+  const launch = T.kick-2;
+  let kx=W/2, ky=groundY, kReach=0;
   const kFacing = (kZoneVis%ZC)<2 ? 1 : -1;
-  if (t>=T.kick-2){
-    const kp = easeOut(clamp((t-(T.kick-2))/(T.reach-(T.kick-2)),0,1));
-    kx = lerp(W/2, kCenter.x, kp);
-    ky = lerp(keeperBaseY, kCenter.y+16, kp);
+  const reachY = kCenter.y+14;                         // Höhe, auf der der Ball erreicht wird
+  if (t < launch){
+    ky = groundY + Math.sin(t*0.16)*1.5;              // bereitschaftliches Wippen
+  } else if (t <= T.reach){
+    const kp = clamp((t-launch)/(T.reach-launch),0,1);
+    kx = lerp(W/2, kCenter.x, easeOut(kp));
+    // Absprung-Bogen: erst hoch, am Ende exakt auf Ballhöhe (Hechtsprung)
+    ky = lerp(groundY, reachY, easeOut(kp)) - Math.sin(kp*Math.PI)*15;
     kReach = kp;
   } else {
-    ky = keeperBaseY + Math.sin(t*0.16)*1.5;         // bereitschaftliches Wippen
+    // nach dem Erreichen zieht die Schwerkraft den Keeper zu Boden -> er fällt & landet
+    kReach = 1;
+    const ft = t - T.reach;
+    kx = kCenter.x;
+    ky = Math.min(groundY+3, reachY + 0.05*ft*ft);
   }
+  const kAir = (t>launch && ky < groundY-2);            // ist der Keeper in der Luft?
 
   // Schütze
   let shooterAnim='ready';
@@ -922,7 +985,7 @@ function drawShot(){
     ballY = lerp(SPOT.y, target.y, fp) - Math.sin(fp*Math.PI)*16;
     ballR = lerp(5, 2.6, fp);
     if (t>=T.reach){
-      if (isSave){ ballX=target.x; ballY=target.y; ballR=3.0; }                   // an den Handschuhen festgehalten
+      if (isSave){ ballX=kx+(kFacing>0?-15:15); ballY=ky-4; ballR=3.0; }          // in den Handschuhen, fällt mit dem Keeper
       else if (ev==='post'){ const bp=clamp((t-T.reach)/30,0,1); ballX=lerp(target.x,target.x+(target.x<W/2?22:-22),bp); ballY=lerp(target.y,SPOT.y-8,bp)-Math.sin(bp*Math.PI)*9; }
       else if (ev==='over'){ const bp=clamp((t-T.reach)/22,0,1); ballY=lerp(target.y,GOAL.y-32,bp); ballR=lerp(2.6,1.5,bp); if (bp>=1) ballVisible=false; }
       else { ballX=target.x; ballY=target.y; ballR=2.6; }                          // Tor: ruht im Netz
@@ -937,8 +1000,14 @@ function drawShot(){
     ctx.beginPath(); ctx.arc(sCenter.x, sCenter.y, 5+np*9, 0, 7); ctx.fill();
   }
 
-  // Zeichnen (Keeper, dann Ball darüber -> bei Parade liegt der Ball in den Händen)
-  drawPlayer(kx, ky, 1-gs.shooter, 1-gs.shooter, kReach>0.12?'dive':'ready', gs.t, kFacing, {keeper:true});
+  // Zeichnen: Bodenschatten des Keepers (bleibt am Boden, schrumpft beim Sprung)
+  if (t>launch){
+    const hgt = clamp((groundY-ky)/45,0,1);
+    ctx.fillStyle='rgba(0,0,0,'+(0.24*(1-hgt)+0.04).toFixed(3)+')';
+    ctx.beginPath(); ctx.ellipse(kx, groundY+2, 12*(1-0.45*hgt), 3.2*(1-0.45*hgt), 0, 0, 7); ctx.fill();
+  }
+  // Keeper, dann Ball darüber -> bei Parade liegt der Ball in den Händen
+  drawPlayer(kx, ky, 1-gs.shooter, 1-gs.shooter, kReach>0.12?'dive':'ready', gs.t, kFacing, {keeper:true, noShadow:(t>launch)});
   if (ballVisible) drawBall(ballX|0, ballY|0, Math.max(1.5,ballR));
   drawPlayer(shX, shY, gs.shooter, gs.shooter, shooterAnim, gs.t, 1);
 
@@ -946,6 +1015,8 @@ function drawShot(){
   if (shotTimeInc(t)<1 && t<T.reach+40){
     textC('· ZEITLUPE ·', W/2, 58, 'rgba(255,255,255,0.45)', 1);
   }
+  // Wiederholungs-Hinweis
+  if (gs.isReplay) textC('WIEDERHOLUNG', W/2, 18, 'rgba(120,200,255,0.7)', 1);
 
   // SFX-Trigger
   if (t>=T.setup && !whistleDone){ SFX.whistle(); whistleDone=true; }
@@ -975,7 +1046,14 @@ function drawShot(){
   ctx.restore();
 
   gs.shotT += shotTimeInc(gs.shotT);
-  if (gs.shotT>T.result+30) advanceAfterShot();
+  if (gs.shotT>T.result+30){
+    if (gs.isReplay){ gs.isReplay=false; gs.state='scoreboard'; gs.t=0; }   // nur ansehen -> zurück
+    else advanceAfterShot();
+  }
+}
+function startReplay(){
+  gs.isReplay=true; gs.state='shot'; gs.shotT=0;
+  kickPlayed=false; sfxPlayed=false; whistleDone=false;
 }
 
 function drawScoreboard(){
@@ -1010,9 +1088,21 @@ function drawScoreboard(){
   const rl = gs.suddenDeath ? 'VERLÄNGERUNG' : 'RUNDE '+(gs.round+1)+' / '+REG;
   textC(rl, W/2, 224, '#9fb6d6', 1);
 
+  // Ausgang des letzten Schusses
+  const ev = gs.shotResult ? gs.shotResult.event : '';
+  let oTxt='', oCol='#cfe0f7';
+  if (ev==='goal'||ev==='rebound'){ oTxt=NAMES[gs.shooter]+' TRIFFT!'; oCol='#ffd23f'; }
+  else if (ev==='keeper-slip'){ oTxt='PATZER – TOR!'; oCol='#ffd23f'; }
+  else if (ev==='saved'){ oTxt='PARADE!'; oCol='#4bc8ff'; }
+  else if (ev==='post'){ oTxt='PFOSTEN!'; oCol='#ffb0b0'; }
+  else if (ev==='over'){ oTxt='DRÜBER!'; oCol='#ff8a8a'; }
+  else if (ev==='slip-shooter'){ oTxt='AUSGERUTSCHT!'; oCol='#ff9a3a'; }
+  if (oTxt) textC(oTxt, W/2, 248, oCol, 2);
+
   buttons=[];
-  if ((gs.t>>4)&1) button('next', W/2-60, 300, 120, 32, 'WEITER', '#3fcf6a', '#04210f');
-  else buttons.push({id:'next',x:W/2-60,y:300,w:120,h:32});
+  // Sekundär: Schuss noch einmal ansehen · Primär: weiter
+  button('replay', W/2-66, 288, 132, 28, 'WIEDERHOLUNG', '#2c3f66', '#dce6f5');
+  button('next',   W/2-66, 324, 132, 32, 'WEITER', '#3fcf6a', '#04210f');
 
   updateConfetti(); drawConfetti();
 }
@@ -1097,7 +1187,7 @@ function advanceAimPhase(){
 function executeShot(){
   gs.slipDir = Math.random()<0.5 ? -1 : 1;
   gs.shotResult = calcResult(gs.shooterZone, gs.keeperZone);
-  gs.state='shot'; gs.shotT=0;
+  gs.state='shot'; gs.shotT=0; gs.isReplay=false;
   kickPlayed=false; sfxPlayed=false; whistleDone=false; gs.pendingAdvance=false;
 }
 function advanceAfterShot(){
@@ -1192,6 +1282,7 @@ function onClick(e){
       break;
     case 'scoreboard':
       if (id==='next'){ SFX.ui(); afterScoreboard(); }
+      else if (id==='replay'){ SFX.ui(); startReplay(); }
       break;
     case 'end':
       if (id==='again'){ SFX.ui(); gs.confetti=[]; startCountrySelect(); }
