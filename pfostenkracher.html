@@ -58,6 +58,13 @@
   .btn-primary { background: #ffd23f; color: #1a1200; }
   .btn-ghost { background: #24314e; color: #cfe0f7; }
   .hint { color: #6f86a8; font-size: 11px; letter-spacing: 1px; text-align: center; max-width: 320px; }
+  .seg { display: flex; gap: 8px; width: 100%; }
+  .seg-btn {
+    flex: 1; padding: 11px 6px; border: 2px solid #2a3a5c; background: #11192e;
+    color: #9fb6d6; border-radius: 8px; font-size: 13px; font-weight: bold;
+    letter-spacing: 1px; text-transform: uppercase; cursor: pointer;
+  }
+  .seg-btn.active { border-color: #ffd23f; background: #1c2742; color: #fff; }
 </style>
 </head>
 <body>
@@ -72,6 +79,13 @@
     <div class="field">
       <label>Spieler 2 (braune Haare)</label>
       <input id="inp2" maxlength="9" autocomplete="off" spellcheck="false">
+    </div>
+    <div class="field">
+      <label>Spielmodus</label>
+      <div class="seg" id="modeSeg">
+        <button type="button" class="seg-btn" data-mode="2">2 Spieler</button>
+        <button type="button" class="seg-btn" data-mode="1">1 Spieler · KI</button>
+      </div>
     </div>
     <div class="rowbtns">
       <button class="btn btn-ghost" id="ovCancel">Abbrechen</button>
@@ -311,6 +325,11 @@ function loadNames() {
 }
 function saveNames(n1,n2){ try{ localStorage.setItem('pk_p1',n1); localStorage.setItem('pk_p2',n2); }catch(e){} }
 let NAMES = loadNames();
+// Spielmodus: false = 2 Spieler (Standard), true = 1 Spieler gegen KI
+function loadSolo(){ try{ return localStorage.getItem('pk_solo')==='1'; }catch(e){ return false; } }
+function saveSolo(v){ try{ localStorage.setItem('pk_solo', v?'1':'0'); }catch(e){} }
+let SOLO = loadSolo();
+function isAI(p){ return gs.singlePlayer && p===1; }   // KI steuert Spieler 2 (Jonte)
 
 // ─── SPIELZUSTAND ─────────────────────────────────────────────────────────────
 let gs = {};
@@ -506,6 +525,30 @@ const GOAL = { x:36, y:78, w:152, h:78 };       // Spielfeld-Tor (Schussszene)
 const GOAL_LINE = GOAL.y + GOAL.h;
 const SPOT = { x:W/2, y:300 };
 
+// Zuschauer-Sitzplätze einmalig festlegen (stabile Positionen, Farbe je Spiel)
+const CROWD = (function(){
+  const seats=[], rows=5, perRow=46;
+  for (let r=0;r<rows;r++){
+    const yBase = 21 + r*7;
+    for (let i=0;i<perRow;i++){
+      const x = (i + (r%2?0.5:0)) * (W/perRow) + (Math.random()*3-1.5);
+      seats.push({
+        x: Math.round(x),
+        y: yBase + ((Math.random()*2-1)|0),
+        side: x < W/2 ? 0 : 1,
+        cross: Math.random()<0.14,        // vereinzelt Gästefans auf der anderen Seite
+        neutral: Math.random()<0.13,      // neutrale Zuschauer (grau)
+        accent: Math.random()<0.42,       // Akzent- statt Haupttrikotfarbe
+        bright: 0.82 + Math.random()*0.36,
+        ph: Math.random()*6.28,
+        k: (Math.random()*4)|0,
+        skin: ['#f2c39a','#e0a878','#c98a5a','#a8693f'][(Math.random()*4)|0],
+      });
+    }
+  }
+  return seats;
+})();
+
 function drawStadium() {
   // Himmel / Abend
   const sky = ctx.createLinearGradient(0,0,0,52);
@@ -518,18 +561,18 @@ function drawStadium() {
     ctx.fillStyle='rgba(255,251,200,0.10)';
     ctx.beginPath(); ctx.moveTo(fx,5); ctx.lineTo(fx-40,55); ctx.lineTo(fx+40,55); ctx.closePath(); ctx.fill();
   }
-  // Ränge mit Publikum
-  ctx.fillStyle='#20283a'; ctx.fillRect(0,20,W,40);
-  const cols=['#d24b4b','#4b6cd2','#d2c14b','#56b85a','#b257c0','#d98a3a','#cfd3da'];
+  // Ränge mit Publikum (durchmischt, in den Farben der beiden Mannschaften)
+  for (let s=0;s<3;s++){ ctx.fillStyle = s%2 ? '#1b2336' : '#222c42'; ctx.fillRect(0, 18+s*13, W, 13); }
   const tt=gs.t||0;
-  for (let row=0; row<4; row++) {
-    for (let i=0;i<32;i++) {
-      const x=(i*7 + row*3)%W;
-      const y=22+row*9 + (Math.sin((tt*0.06)+(i+row*5))>0.6?-1:0);
-      ctx.fillStyle=cols[(i+row)%cols.length];
-      ctx.fillRect(x,y,5,4);
-      ctx.fillStyle='#f2c39a'; ctx.fillRect(x+1,y-2,3,2);
-    }
+  const NEU=['#555d70','#6a7285','#7a8295','#969db0'];
+  for (const p of CROWD){
+    const side = p.cross ? 1-p.side : p.side;
+    const tm = gs.teams[side];
+    const base = (p.neutral || !tm) ? NEU[p.k] : (p.accent ? (tm.accent||tm.shirt) : tm.shirt);
+    const col = shade(base, p.bright-1);
+    const yo = (Math.sin(tt*0.05 + p.ph) > 0.55) ? -1 : 0;   // leichtes Wogen
+    ctx.fillStyle=col;     ctx.fillRect(p.x, p.y+yo, 4, 5);
+    ctx.fillStyle=p.skin;  ctx.fillRect(p.x+1, p.y-2+yo, 3, 3);
   }
   ctx.fillStyle='#161b27'; ctx.fillRect(0,56,W,4); // Bande
 }
@@ -630,13 +673,24 @@ function calcResult(sZone, kZone){
   const outerCol = (sCol===0 || sCol===ZC-1);
   const topRow   = (sRow===0);
   let missGoal = 0.05;
-  if (outerCol) missGoal += 0.10;
-  if (topRow)   missGoal += 0.08;
-  if (outerCol && topRow) missGoal += 0.05;
+  if (outerCol) missGoal += 0.11;
+  if (topRow)   missGoal += 0.09;
+  if (outerCol && topRow) missGoal += 0.06;
   if (Math.random() < missGoal) {
-    // Pfosten (außen) oder drüber (oben)
-    if (topRow && Math.random()<0.55) return { goal:false, event:'over' };
-    return { goal:false, event:'post' };
+    // Fehlschuss: drüber, am Pfosten oder klar daneben (vorbei)
+    const r = Math.random();
+    if (topRow && outerCol) {                 // hohe Ecke: alles möglich
+      if (r<0.34) return { goal:false, event:'over', side:(sCol===0?-1:1) };
+      if (r<0.6)  return { goal:false, event:'wide', side:(sCol===0?-1:1) };
+      return { goal:false, event:'post', side:(sCol===0?-1:1) };
+    }
+    if (topRow) {                             // oben Mitte: meist drüber
+      if (r<0.7) return { goal:false, event:'over', side:0 };
+      return { goal:false, event:'post', side:(Math.random()<0.5?-1:1) };
+    }
+    // außen (Eckpfosten): Pfosten oder vorbei
+    if (r<0.45) return { goal:false, event:'post', side:(sCol===0?-1:1) };
+    return { goal:false, event:'wide', side:(sCol===0?-1:1) };
   }
 
   // 3) Torwart-Parade: Wahrscheinlichkeit fällt mit Distanz Schuss<->Sprung
@@ -687,32 +741,64 @@ function hitButton(mx,my){ for(const b of buttons){ if(mx>=b.x&&mx<=b.x+b.w&&my>
 //  SCREENS
 // ════════════════════════════════════════════════════════════════════════════
 function drawTitle(){
-  drawStadium(); drawPitch();
-  // hüpfender Ball
-  const bt=(gs.t*1.4)%160;
-  const bx=30+bt, by=250 - Math.abs(Math.sin(bt/160*Math.PI*3))*80;
-  drawBall(bx,by,6);
-  // Demo-Spieler
-  drawPlayer(70, 350, 0, 0, 'idle', gs.t, 1);
-  drawPlayer(W-70, 352, 1, 1, 'idle', gs.t, -1, {});
+  // Demo-Teams für ein farbiges Publikum (nur wenn noch keine echten gesetzt)
+  if (!gs.teams[0] || !gs.teams[1]) gs.teams = [TEAMS[1], TEAMS[3]];
 
-  // Dunkler Verlauf für Titel
-  const ov=ctx.createLinearGradient(0,0,0,H);
-  ov.addColorStop(0,'rgba(4,8,20,0.78)'); ov.addColorStop(0.5,'rgba(4,8,20,0.35)'); ov.addColorStop(1,'rgba(4,8,20,0.0)');
-  ctx.fillStyle=ov; ctx.fillRect(0,0,W,H);
+  // Hintergrund-Szene: Stadion + Spielfeld + Tor + wartender Keeper + Ball auf dem Punkt
+  drawStadium(); drawPitch(); drawGoal(true);
 
-  // Logo
-  textC('PFOSTEN', W/2, 44, '#ffd23f', 4);
-  textC('KRACHER', W/2, 86, '#ff4b4b', 4);
-  textC('PIXEL-ELFMETERSCHIESSEN', W/2, 124, '#cfe0f7', 1);
+  // funkelnde Sterne über den Rängen
+  for (let i=0;i<20;i++){
+    const sx=(i*53)%W, sy=(i*29)%16;
+    if (((gs.t>>2)+i*4)%11 < 5){ ctx.fillStyle='rgba(255,255,255,'+(0.25+0.45*((i*7)%5)/5)+')'; ctx.fillRect(sx,sy,1,1); }
+  }
 
+  // wartender Torwart in der Mitte des Tores
+  drawPlayer(W/2, GOAL_LINE-2, 1, 1, 'ready', gs.t, 1, {keeper:true});
+  // glühender Ball auf dem Elfmeterpunkt (statt wildem Gehüpfe)
+  const glow=0.5+0.5*Math.sin(gs.t*0.09);
+  const bg=ctx.createRadialGradient(SPOT.x,SPOT.y,1,SPOT.x,SPOT.y,16+glow*5);
+  bg.addColorStop(0,'rgba(255,240,180,'+(0.22+0.18*glow)+')'); bg.addColorStop(1,'rgba(255,240,180,0)');
+  ctx.fillStyle=bg; ctx.beginPath(); ctx.arc(SPOT.x,SPOT.y,18+glow*5,0,7); ctx.fill();
+  drawBall(SPOT.x, SPOT.y, 5);
+
+  // Vignette: oben dunkel (fürs Logo), Mitte frei (Bühne), unten dunkel (für Buttons)
+  const tg=ctx.createLinearGradient(0,0,0,150);
+  tg.addColorStop(0,'rgba(5,9,20,0.94)'); tg.addColorStop(0.62,'rgba(5,9,20,0.42)'); tg.addColorStop(1,'rgba(5,9,20,0)');
+  ctx.fillStyle=tg; ctx.fillRect(0,0,W,150);
+  const bgr=ctx.createLinearGradient(0,250,0,H);
+  bgr.addColorStop(0,'rgba(5,9,20,0)'); bgr.addColorStop(0.42,'rgba(5,9,20,0.86)'); bgr.addColorStop(1,'rgba(6,10,22,0.98)');
+  ctx.fillStyle=bgr; ctx.fillRect(0,250,W,H-250);
+
+  // Logo mit Schweben, Glow und Glanz-Sweep
+  const by=Math.sin(gs.t*0.045)*2;
+  const lg=ctx.createRadialGradient(W/2,60+by,4,W/2,60+by,96);
+  lg.addColorStop(0,'rgba(255,210,63,0.20)'); lg.addColorStop(1,'rgba(255,210,63,0)');
+  ctx.fillStyle=lg; ctx.fillRect(0,0,W,150);
+  textC('PFOSTEN', W/2, 34+by, '#ffd23f', 4);
+  textC('KRACHER', W/2, 76+by, '#ff5247', 4);
+  const sweep=((gs.t*2.4)%(W+80))-40;
+  ctx.save(); ctx.beginPath(); ctx.rect(sweep-11,30+by,22,80); ctx.clip();
+  textC('PFOSTEN', W/2, 34+by, 'rgba(255,255,255,0.92)', 4, false);
+  textC('KRACHER', W/2, 76+by, 'rgba(255,255,255,0.92)', 4, false);
+  ctx.restore();
+  textC('PIXEL-ELFMETERSCHIESSEN', W/2, 116+by, '#cfe0f7', 1);
+
+  // Modus-Anzeige
+  const mode = SOLO ? '1 SPIELER · GEGEN KI' : '2 SPIELER · LOKAL';
+  const mw=textWidth(mode,1)+16;
+  ctx.fillStyle='rgba(255,255,255,0.07)'; rr(W/2-mw/2,262,mw,14,7); ctx.fill();
+  textC(mode, W/2, 266, '#bcd0ee', 1);
+
+  // Buttons
   buttons=[];
-  button('start',   W/2-66, 168, 132, 34, 'SPIELEN', '#3fcf6a', '#04210f');
-  button('settings',W/2-66, 210, 132, 30, 'EINSTELLUNGEN', '#4b9bff', '#04132a');
+  const pulse=0.5+0.5*Math.sin(gs.t*0.1);
+  ctx.fillStyle='rgba(63,207,106,'+(0.10+0.18*pulse).toFixed(3)+')'; rr(W/2-78,288,156,46,13); ctx.fill();
+  button('start',    W/2-70, 296, 140, 34, 'SPIELEN', '#3fcf6a', '#04210f');
+  button('settings', W/2-70, 340, 140, 28, 'EINSTELLUNGEN', '#36507f', '#dce8f7');
 
-  if ((gs.t>>4)&1) textC('FÜR 2 SPIELER · LOKAL', W/2, 258, '#aab9d0', 1);
-  textC('FIETE  VS  JONTE', W/2, H-30, '#7f93b4', 1);
-  textC('V2.0', W/2, H-16, '#465875', 1);
+  textC(NAMES[0]+'  VS  '+(SOLO?'KI':NAMES[1]), W/2, H-24, '#7f93b4', 1);
+  textC('V2.1', W/2, H-13, '#465875', 1);
 }
 
 function drawCountry(){
@@ -721,18 +807,35 @@ function drawCountry(){
   ctx.fillStyle='rgba(8,14,30,0.82)'; ctx.fillRect(0,52,W,H-52);
 
   const pl = gs.chooseOrder[gs.choosePhase];
-  const plCol = pl===0?'#ffe08a':'#a9d0ff';
+  const aiChooses = isAI(pl);
+  const plCol = aiChooses ? '#ff9a6a' : (pl===0?'#ffe08a':'#a9d0ff');
+
+  // KI wählt automatisch nach kurzer Bedenkzeit
+  if (aiChooses && gs.t>40){
+    const takenAI = gs.choosePhase===1 ? gs.teams[gs.chooseOrder[0]] : null;
+    let idx; do { idx=Math.random()*TEAMS.length|0; } while(TEAMS[idx]===takenAI);
+    gs.teams[pl]=TEAMS[idx];
+    if (gs.choosePhase===0){ gs.choosePhase=1; gs.t=0; } else { startMatch(); }
+    return;
+  }
+
   // farbcodierter Hinweis-Balken: wer ist dran?
-  ctx.fillStyle = pl===0?'rgba(255,210,63,0.15)':'rgba(75,155,255,0.15)';
+  ctx.fillStyle = aiChooses ? 'rgba(255,150,80,0.15)' : (pl===0?'rgba(255,210,63,0.15)':'rgba(75,155,255,0.15)');
   rr(16,58,W-32,30,6); ctx.fill();
   ctx.strokeStyle=plCol; ctx.lineWidth=1; rr(16.5,58.5,W-33,29,6); ctx.stroke();
-  textC(NAMES[pl]+' WÄHLT', W/2, 64, plCol, 2);
-  textC('SPIELER '+(pl+1)+'  ·  '+(gs.choosePhase===0?'LOSENTSCHEID: ZUERST':'JETZT DU'), W/2, 80, '#9fb6d6', 1);
-  if (gs.choosePhase===1) textC(NAMES[gs.chooseOrder[0]]+' HAT '+gs.teams[gs.chooseOrder[0]].name+' GEWÄHLT', W/2, 100, '#7f93b4', 1);
-  else textC('WÄHLE DEINE MANNSCHAFT', W/2, 100, '#7f93b4', 1);
+  textC((aiChooses?NAMES[1]+' (KI) WÄHLT':NAMES[pl]+' WÄHLT'), W/2, 64, plCol, 2);
+  if (aiChooses){
+    const dots='.'.repeat(((gs.t/12)|0)%4);
+    textC('DER GEGNER ÜBERLEGT'+dots, W/2, 84, '#9fb6d6', 1);
+  } else {
+    textC('SPIELER '+(pl+1)+'  ·  '+(gs.choosePhase===0?'LOSENTSCHEID: ZUERST':'JETZT DU'), W/2, 80, '#9fb6d6', 1);
+    if (gs.choosePhase===1) textC(NAMES[gs.chooseOrder[0]]+' HAT '+gs.teams[gs.chooseOrder[0]].name+' GEWÄHLT', W/2, 100, '#7f93b4', 1);
+    else textC('WÄHLE DEINE MANNSCHAFT', W/2, 100, '#7f93b4', 1);
+  }
 
-  // Flaggen-Raster 3 Spalten
+  // Flaggen-Raster 3 Spalten (Antippen nur, wenn ein Mensch wählt)
   buttons=[];
+  const human = !aiChooses;
   const cols=3, cw=66, ch=50, gapx=4, gapy=4;
   const totalW=cols*cw+(cols-1)*gapx;
   const startX=(W-totalW)/2, startY=114;
@@ -744,7 +847,7 @@ function drawCountry(){
     drawFlag(tm, x, y, cw, 30);
     if (taken){ ctx.fillStyle='rgba(8,14,30,0.7)'; ctx.fillRect(x,y,cw,30); textC('BELEGT', x+cw/2, y+11, '#ff8a8a', 1); }
     textC(tm.name, x+cw/2, y+34, taken?'#5a6a86':'#e6eefc', 1);
-    if(!taken) buttons.push({id:'c'+i, x, y, w:cw, h:46});
+    if(!taken && human) buttons.push({id:'c'+i, x, y, w:cw, h:46});
   });
 }
 
@@ -823,7 +926,7 @@ function drawHandoff(){
   textC(roundLabel, W/2, 28, MUT, 1);
 
   // Kopf: Aufforderung + Name (klare, abgestufte Hierarchie)
-  textC('GERÄT WEITERGEBEN AN', W/2, 54, MUT, 1);
+  textC(gs.singlePlayer ? 'DU BIST DRAN' : 'GERÄT WEITERGEBEN AN', W/2, 54, MUT, 1);
   textC(NAMES[target], W/2, 70, '#ffd23f', 3);
 
   // Rollen-Karte
@@ -936,9 +1039,11 @@ function drawShot(){
   const sCenter = zoneCenter(GOAL, gs.shooterZone);
 
   // Ziel des Balls
+  const missSide = gs.shotResult.side || (gs.shooterZone%ZC<2 ? -1 : 1);
   let target = { x:sCenter.x, y:sCenter.y };
-  if (ev==='over') target = { x:sCenter.x, y:GOAL.y-16 };
-  if (ev==='post') target = { x:(gs.shooterZone%ZC)<2?GOAL.x-3:GOAL.x+GOAL.w+3, y:sCenter.y };
+  if (ev==='over') target = { x:sCenter.x + missSide*16, y:GOAL.y-16 };
+  if (ev==='post') target = { x:(missSide<0?GOAL.x-3:GOAL.x+GOAL.w+3), y:sCenter.y };
+  if (ev==='wide') target = { x:(missSide<0?GOAL.x-22:GOAL.x+GOAL.w+22), y:sCenter.y-6 };
   if (ev==='slip-shooter') target = { x:SPOT.x+(gs.slipDir||-1)*30, y:SPOT.y-18 };
 
   // Torwart: bei einer PARADE hechtet er ZUM BALL (sonst zu seiner geratenen Ecke
@@ -946,17 +1051,17 @@ function drawShot(){
   const kZoneVis = isSave ? gs.shooterZone : gs.keeperZone;
   const kCenter = zoneCenter(GOAL, kZoneVis);
   const groundY = GOAL_LINE-2;
-  const launch = T.kick-2;
+  const launch = T.kick + 4;                            // kurze Reaktionszeit: erst springen, wenn der Ball unterwegs ist
   let kx=W/2, ky=groundY, kReach=0;
   const kFacing = (kZoneVis%ZC)<2 ? 1 : -1;
-  const reachY = kCenter.y+14;                         // Höhe, auf der der Ball erreicht wird
+  const reachY = kCenter.y+14;                          // Höhe, auf der der Ball erreicht wird
   if (t < launch){
-    ky = groundY + Math.sin(t*0.16)*1.5;              // bereitschaftliches Wippen
+    ky = groundY + Math.sin(t*0.16)*1.5;               // bereitschaftliches Wippen, noch am Boden
   } else if (t <= T.reach){
     const kp = clamp((t-launch)/(T.reach-launch),0,1);
-    kx = lerp(W/2, kCenter.x, easeOut(kp));
-    // Absprung-Bogen: erst hoch, am Ende exakt auf Ballhöhe (Hechtsprung)
-    ky = lerp(groundY, reachY, easeOut(kp)) - Math.sin(kp*Math.PI)*15;
+    const ke = easeIn(kp);                             // erst kaum bewegen (lauern), dann explosiv zum Ball
+    kx = lerp(W/2, kCenter.x, ke);
+    ky = lerp(groundY, reachY, ke) - Math.sin(kp*Math.PI)*15;   // Absprung-Bogen, am Ende exakt auf Ballhöhe
     kReach = kp;
   } else {
     // nach dem Erreichen zieht die Schwerkraft den Keeper zu Boden -> er fällt & landet
@@ -965,7 +1070,9 @@ function drawShot(){
     kx = kCenter.x;
     ky = Math.min(groundY+3, reachY + 0.05*ft*ft);
   }
-  const kAir = (t>launch && ky < groundY-2);            // ist der Keeper in der Luft?
+  // Landezeitpunkt (für Staubwolke)
+  const ftLand = Math.sqrt(Math.max(0,(groundY-reachY)/0.05));
+  const landT  = T.reach + ftLand;
 
   // Schütze
   let shooterAnim='ready';
@@ -988,6 +1095,7 @@ function drawShot(){
       if (isSave){ ballX=kx+(kFacing>0?-15:15); ballY=ky-4; ballR=3.0; }          // in den Handschuhen, fällt mit dem Keeper
       else if (ev==='post'){ const bp=clamp((t-T.reach)/30,0,1); ballX=lerp(target.x,target.x+(target.x<W/2?22:-22),bp); ballY=lerp(target.y,SPOT.y-8,bp)-Math.sin(bp*Math.PI)*9; }
       else if (ev==='over'){ const bp=clamp((t-T.reach)/22,0,1); ballY=lerp(target.y,GOAL.y-32,bp); ballR=lerp(2.6,1.5,bp); if (bp>=1) ballVisible=false; }
+      else if (ev==='wide'){ const bp=clamp((t-T.reach)/26,0,1); ballX=lerp(target.x,target.x+missSide*34,bp); ballY=lerp(target.y,target.y+18,bp); ballR=lerp(2.6,2.1,bp); }
       else { ballX=target.x; ballY=target.y; ballR=2.6; }                          // Tor: ruht im Netz
     }
   }
@@ -1007,7 +1115,20 @@ function drawShot(){
     ctx.beginPath(); ctx.ellipse(kx, groundY+2, 12*(1-0.45*hgt), 3.2*(1-0.45*hgt), 0, 0, 7); ctx.fill();
   }
   // Keeper, dann Ball darüber -> bei Parade liegt der Ball in den Händen
-  drawPlayer(kx, ky, 1-gs.shooter, 1-gs.shooter, kReach>0.12?'dive':'ready', gs.t, kFacing, {keeper:true, noShadow:(t>launch)});
+  // Pose: erst noch stehend/lauernd, erst beim echten Abheben in die Hecht-Pose
+  const keeperPose = (kReach>0.34 || (t>T.reach)) ? 'dive' : 'ready';
+  drawPlayer(kx, ky, 1-gs.shooter, 1-gs.shooter, keeperPose, gs.t, kFacing, {keeper:true, noShadow:(t>launch)});
+  // Landungs-Staubwolke (dezenter Eyecatcher)
+  if (t>landT-1 && t<landT+22){
+    const d=clamp((t-landT)/22,0,1), dir=kFacing>0?-1:1;
+    for (let i=0;i<6;i++){
+      const a=Math.PI*(0.12+0.72*i/5), rad=3+d*16;
+      ctx.fillStyle='rgba(228,231,218,'+(0.4*(1-d)).toFixed(3)+')';
+      ctx.beginPath();
+      ctx.arc(kx+Math.cos(a)*rad*dir, groundY+3-Math.sin(a)*rad*0.45, 1.4+d*2.3, 0, 7);
+      ctx.fill();
+    }
+  }
   if (ballVisible) drawBall(ballX|0, ballY|0, Math.max(1.5,ballR));
   drawPlayer(shX, shY, gs.shooter, gs.shooter, shooterAnim, gs.t, 1);
 
@@ -1025,7 +1146,7 @@ function drawShot(){
     sfxPlayed=true;
     if (isGoalNet){ SFX.goal(); spawnConfetti(50); gs.shake=2; }   // nur dezenter Impuls beim Einschlag
     else if (ev==='post') SFX.post();
-    else if (ev==='over') SFX.miss();
+    else if (ev==='over'||ev==='wide') SFX.miss();
     else if (ev==='slip-shooter') SFX.slip();
     else SFX.save();
   }
@@ -1038,6 +1159,7 @@ function drawShot(){
     else if (ev==='saved'){ txt='GEHALTEN!'; col='#4bc8ff'; }
     else if (ev==='post'){ txt='PFOSTEN!'; col='#ffb0b0'; }
     else if (ev==='over'){ txt='DRÜBER!'; col='#ff8a8a'; }
+    else if (ev==='wide'){ txt='DANEBEN!'; col='#ff8a8a'; }
     else if (ev==='slip-shooter'){ txt='AUSGERUTSCHT!'; col='#ff9a3a'; }
     textC(txt, W/2, 92, col, 3);
   }
@@ -1096,6 +1218,7 @@ function drawScoreboard(){
   else if (ev==='saved'){ oTxt='PARADE!'; oCol='#4bc8ff'; }
   else if (ev==='post'){ oTxt='PFOSTEN!'; oCol='#ffb0b0'; }
   else if (ev==='over'){ oTxt='DRÜBER!'; oCol='#ff8a8a'; }
+  else if (ev==='wide'){ oTxt='DANEBEN!'; oCol='#ff8a8a'; }
   else if (ev==='slip-shooter'){ oTxt='AUSGERUTSCHT!'; oCol='#ff9a3a'; }
   if (oTxt) textC(oTxt, W/2, 248, oCol, 2);
 
@@ -1153,10 +1276,49 @@ function startMatch(){
 function startRoundHandoff(isShooterTurn){
   gs.aimPhase = isShooterTurn?'shooter':'keeper';
   gs.handoffIsShooter = isShooterTurn;
-  gs.handoffTarget = isShooterTurn ? gs.shooter : (1-gs.shooter);
+  const actor = isShooterTurn ? gs.shooter : (1-gs.shooter);
+  gs.handoffTarget = actor;
   // ist dies der allererste Schuss des Spiels? (für deutlichen Hinweis)
   gs.firstKick = isShooterTurn && gs.round===0 && gs.shotInRound===0;
-  gs.state='handoff'; gs.t=0;
+  if (isAI(actor)){ gs.aiIsShooter = isShooterTurn; gs.state='aithink'; gs.t=0; }
+  else { gs.state='handoff'; gs.t=0; }
+}
+// ─── KI ───────────────────────────────────────────────────────────────────────
+function aiShooterZone(){
+  const good=[8,11,0,3,4,7];            // bevorzugt platzierte Ecken / Seiten
+  return Math.random()<0.7 ? good[Math.random()*good.length|0] : (Math.random()*NZ|0);
+}
+function aiKeeperZone(){
+  const guess=[8,11,4,7,9,10,0,3];      // rät plausibel, ohne zu schummeln
+  return Math.random()<0.55 ? guess[Math.random()*guess.length|0] : (Math.random()*NZ|0);
+}
+function aiCommit(){
+  if (gs.aiIsShooter) gs.shooterZone = aiShooterZone();
+  else gs.keeperZone = aiKeeperZone();
+  advanceAimPhase();
+}
+function drawAIThink(){
+  const bg=ctx.createLinearGradient(0,0,0,H);
+  bg.addColorStop(0,'#0d1626'); bg.addColorStop(1,'#070d18');
+  ctx.fillStyle=bg; ctx.fillRect(0,0,W,H);
+  const isSh=gs.aiIsShooter;
+  const accent = isSh ? '#ff7a59' : '#ffb454';   // KI in warmen Tönen
+  const MUT='#8aa0c0';
+  const roundLabel = gs.suddenDeath ? 'VERLÄNGERUNG' : 'RUNDE '+(gs.round+1)+' / '+REG;
+  textC(roundLabel, W/2, 28, MUT, 1);
+  textC('GEGNER', W/2, 54, MUT, 1);
+  textC(NAMES[1]+' (KI)', W/2, 70, '#ffd23f', 3);
+
+  const cx0=26, cy0=118, cw=W-52, ch=206;
+  ctx.fillStyle='rgba(255,150,80,0.12)'; rr(cx0,cy0,cw,ch,12); ctx.fill();
+  ctx.strokeStyle=accent; ctx.lineWidth=2; rr(cx0+1,cy0+1,cw-2,ch-2,11); ctx.stroke();
+  if (isSh) drawBootBig(W/2, cy0+58); else drawGloveBig(W/2, cy0+62);
+  textC(isSh?'SCHIESST':'HÄLT', W/2, cy0+108, accent, 3);
+  const dots='.'.repeat(((gs.t/12)|0)%4);
+  textC('ÜBERLEGT'+dots, W/2, cy0+142, '#cfe0f7', 1);
+  flagTeam(gs.teams[1].name, gs.teams[1], cy0+180, MUT);
+
+  if (gs.t>52) aiCommit();
 }
 function beginAim(){
   gs.state='aim'; gs.t=0; gs.aimTimer=7; gs.aimLocked=false;
@@ -1291,6 +1453,7 @@ function onClick(e){
   }
 }
 function startCountrySelect(){
+  gs.singlePlayer = SOLO;            // Modus für das ganze Match festlegen
   gs.teams=[null,null];
   gs.chooseOrder = Math.random()<0.5?[0,1]:[1,0];
   gs.choosePhase=0;
@@ -1303,15 +1466,22 @@ canvas.addEventListener('touchstart', onClick, {passive:false});
 const overlay=document.getElementById('overlay');
 const inp1=document.getElementById('inp1'), inp2=document.getElementById('inp2');
 let overlayOpen=false;
+let tmpSolo=false;
+const segBtns=document.querySelectorAll('#modeSeg .seg-btn');
+function updateSeg(){ segBtns.forEach(b=>b.classList.toggle('active', (b.dataset.mode==='1')===tmpSolo)); }
+segBtns.forEach(b=>b.addEventListener('click', ()=>{ tmpSolo = b.dataset.mode==='1'; updateSeg(); }));
 function openOverlay(){
   overlayOpen=true; overlay.classList.add('show');
   inp1.value=NAMES[0]; inp2.value=NAMES[1];
+  tmpSolo=SOLO; updateSeg();
 }
 function closeOverlay(){ overlayOpen=false; overlay.classList.remove('show'); }
 function sanitize(v,def){ v=(v||'').toUpperCase().replace(/[^A-ZÄÖÜ ]/g,'').trim().slice(0,9); return v||def; }
 document.getElementById('ovSave').addEventListener('click', ()=>{
   NAMES=[sanitize(inp1.value,'FIETE'), sanitize(inp2.value,'JONTE')];
-  saveNames(NAMES[0],NAMES[1]); closeOverlay(); SFX.ui();
+  saveNames(NAMES[0],NAMES[1]);
+  SOLO=tmpSolo; saveSolo(SOLO);
+  closeOverlay(); SFX.ui();
 });
 document.getElementById('ovCancel').addEventListener('click', ()=>{ closeOverlay(); });
 
@@ -1325,6 +1495,7 @@ function loop(){
     case 'title':      drawTitle(); break;
     case 'country':    drawCountry(); break;
     case 'handoff':    drawHandoff(); break;
+    case 'aithink':    drawAIThink(); break;
     case 'aim':        drawAim(); break;
     case 'shot':       drawShot(); break;
     case 'scoreboard': drawScoreboard(); break;
