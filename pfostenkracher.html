@@ -143,42 +143,119 @@ function playNoise(dur, vol=0.15) {
     src.connect(g); g.connect(a.destination); src.start();
   } catch(e) {}
 }
+// gefilterter Rauschimpuls mit Hüllkurve (für Snaps, Fänge, Schläge)
+function noiseBurst(dur, vol, type='bandpass', freq=1000, Q=1, attack=0.004){
+  try{
+    const a=getAudio(), buf=a.createBuffer(1, Math.max(1,a.sampleRate*dur), a.sampleRate), d=buf.getChannelData(0);
+    for(let i=0;i<d.length;i++) d[i]=Math.random()*2-1;
+    const src=a.createBufferSource(); src.buffer=buf;
+    const f=a.createBiquadFilter(); f.type=type; f.frequency.value=freq; f.Q.value=Q;
+    const g=a.createGain(), t0=a.currentTime;
+    g.gain.setValueAtTime(0,t0); g.gain.linearRampToValueAtTime(vol,t0+attack);
+    g.gain.exponentialRampToValueAtTime(0.0008,t0+dur);
+    src.connect(f); f.connect(g); g.connect(a.destination); src.start(); src.stop(t0+dur);
+  }catch(e){}
+}
+// anschwellender Jubel/Menge
+function roar(dur, vol){
+  try{
+    const a=getAudio(), len=Math.max(1,a.sampleRate*dur), buf=a.createBuffer(1,len,a.sampleRate), d=buf.getChannelData(0);
+    for(let i=0;i<len;i++) d[i]=Math.random()*2-1;
+    const src=a.createBufferSource(); src.buffer=buf;
+    const f=a.createBiquadFilter(); f.type='bandpass'; f.frequency.value=820; f.Q.value=0.6;
+    const g=a.createGain(), t0=a.currentTime;
+    g.gain.setValueAtTime(0.001,t0); g.gain.linearRampToValueAtTime(vol,t0+dur*0.35);
+    g.gain.linearRampToValueAtTime(0.0,t0+dur);
+    src.connect(f); f.connect(g); g.connect(a.destination); src.start(); src.stop(t0+dur);
+  }catch(e){}
+}
+// ein Pfiff einer Schiedsrichter-Trillerpfeife (Triller + Luftrauschen)
+function whistleBlast(start, dur, vol=0.42){
+  try{
+    const a=getAudio();
+    const o=a.createOscillator(); o.type='sine'; o.frequency.value=2630;
+    const lfo=a.createOscillator(); lfo.type='sine'; lfo.frequency.value=27;   // Triller
+    const lfoG=a.createGain(); lfoG.gain.value=150; lfo.connect(lfoG); lfoG.connect(o.frequency);
+    const g=a.createGain();
+    g.gain.setValueAtTime(0.0001,start); g.gain.linearRampToValueAtTime(vol,start+0.025);
+    g.gain.setValueAtTime(vol,start+dur-0.05); g.gain.exponentialRampToValueAtTime(0.0001,start+dur);
+    o.connect(g); g.connect(a.destination); o.start(start); o.stop(start+dur);
+    lfo.start(start); lfo.stop(start+dur);
+    const nb=a.createBuffer(1,Math.max(1,a.sampleRate*dur),a.sampleRate), nd=nb.getChannelData(0);
+    for(let i=0;i<nd.length;i++) nd[i]=Math.random()*2-1;
+    const ns=a.createBufferSource(); ns.buffer=nb;
+    const nf=a.createBiquadFilter(); nf.type='bandpass'; nf.frequency.value=2630; nf.Q.value=7;
+    const ng=a.createGain();
+    ng.gain.setValueAtTime(0.0001,start); ng.gain.linearRampToValueAtTime(vol*0.2,start+0.03); ng.gain.exponentialRampToValueAtTime(0.0001,start+dur);
+    ns.connect(nf); nf.connect(ng); ng.connect(a.destination); ns.start(start); ns.stop(start+dur);
+  }catch(e){}
+}
 const SFX = {
-  ui()   { playTone(660, 0.06, 'square', 0.18); },
-  step() { playTone(110, 0.05, 'sine', 0.18); playNoise(0.03, 0.06); },
-  kick() { playTone(90, 0.16, 'sine', 0.5); playNoise(0.09, 0.32); },
-  goal() {
-    [523,659,784,1047,1319].forEach((f,i)=>setTimeout(()=>playTone(f,0.28,'square',0.28),i*110));
-    setTimeout(()=>playNoise(1.0, 0.18), 120);
+  ui()   { playTone(660, 0.06, 'square', 0.16); },
+  step() { playTone(110, 0.05, 'sine', 0.14); },
+  kick() {
+    // satter Aufprall: tiefer Thud (Tonhöhenabfall) + Leder-Snap
+    try{
+      const a=getAudio(), t0=a.currentTime, o=a.createOscillator(), g=a.createGain();
+      o.type='sine'; o.frequency.setValueAtTime(205,t0); o.frequency.exponentialRampToValueAtTime(58,t0+0.12);
+      g.gain.setValueAtTime(0.6,t0); g.gain.exponentialRampToValueAtTime(0.001,t0+0.14);
+      o.connect(g); g.connect(a.destination); o.start(); o.stop(t0+0.15);
+    }catch(e){}
+    noiseBurst(0.05, 0.5, 'highpass', 1800, 0.7, 0.001);
   },
-  save() { playTone(240,0.18,'triangle',0.4); setTimeout(()=>playTone(170,0.3,'triangle',0.3),160); playNoise(0.12,0.18); },
-  post() { playTone(1300,0.05,'square',0.5); setTimeout(()=>playTone(950,0.32,'sine',0.3),60); },
-  miss() { playTone(220,0.14,'sine',0.4); setTimeout(()=>playTone(150,0.3,'sine',0.3),150); },
+  goal() {
+    [523,659,784,1047,1319].forEach((f,i)=>setTimeout(()=>playTone(f,0.26,'square',0.22),i*95));
+    roar(1.4, 0.32);
+  },
+  save() {
+    // Fang/Faustabwehr: dumpfer Schlag + kurzes Raunen der Menge
+    try{
+      const a=getAudio(), t0=a.currentTime, o=a.createOscillator(), g=a.createGain();
+      o.type='sine'; o.frequency.setValueAtTime(150,t0); o.frequency.exponentialRampToValueAtTime(78,t0+0.1);
+      g.gain.setValueAtTime(0.45,t0); g.gain.exponentialRampToValueAtTime(0.001,t0+0.12);
+      o.connect(g); g.connect(a.destination); o.start(); o.stop(t0+0.13);
+    }catch(e){}
+    noiseBurst(0.09, 0.28, 'bandpass', 520, 1, 0.002);
+    roar(0.7, 0.15);
+  },
+  post() {
+    // Metall-Ping am Pfosten mit Nachklang
+    playTone(1500, 0.04, 'square', 0.5);
+    setTimeout(()=>{ playTone(1180,0.5,'sine',0.32); playTone(1770,0.4,'sine',0.12); }, 40);
+  },
+  miss() {
+    // enttäuschtes Raunen
+    try{
+      const a=getAudio(), t0=a.currentTime, o=a.createOscillator(), g=a.createGain(), f=a.createBiquadFilter();
+      o.type='sawtooth'; o.frequency.setValueAtTime(300,t0); o.frequency.exponentialRampToValueAtTime(150,t0+0.5);
+      f.type='lowpass'; f.frequency.value=720;
+      g.gain.setValueAtTime(0.0,t0); g.gain.linearRampToValueAtTime(0.18,t0+0.1); g.gain.exponentialRampToValueAtTime(0.001,t0+0.55);
+      o.connect(f); f.connect(g); g.connect(a.destination); o.start(); o.stop(t0+0.56);
+    }catch(e){}
+  },
   slip() {
-    const a = getAudio();
     try {
-      const o=a.createOscillator(),g=a.createGain();
+      const a=getAudio(), o=a.createOscillator(), g=a.createGain();
       o.type='sawtooth'; o.frequency.setValueAtTime(600,a.currentTime);
       o.frequency.exponentialRampToValueAtTime(100,a.currentTime+0.4);
-      g.gain.setValueAtTime(0.35,a.currentTime);
+      g.gain.setValueAtTime(0.32,a.currentTime);
       g.gain.exponentialRampToValueAtTime(0.001,a.currentTime+0.4);
       o.connect(g); g.connect(a.destination); o.start(); o.stop(a.currentTime+0.4);
     } catch(e){}
   },
   whistle() {
-    playTone(1900,0.18,'sine',0.35,false);
-    setTimeout(()=>playTone(2100,0.16,'sine',0.35,false),120);
-    setTimeout(()=>playTone(1900,0.001,'sine',0,true),300);
+    const a=getAudio(), t=a.currentTime;
+    whistleBlast(t, 0.16); whistleBlast(t+0.22, 0.28);
   },
-  tick() { playTone(820,0.05,'square',0.16); },
+  tick() { playTone(820,0.05,'square',0.14); },
   crowd() {
     try {
       const a=getAudio(), buf=a.createBuffer(1,a.sampleRate*2,a.sampleRate);
       const d=buf.getChannelData(0);
-      for (let i=0;i<d.length;i++) d[i]=(Math.random()*2-1)*Math.sin(i/1000);
+      for (let i=0;i<d.length;i++) d[i]=(Math.random()*2-1)*(0.6+0.4*Math.sin(i/900));
       const src=a.createBufferSource(), g=a.createGain(), filt=a.createBiquadFilter();
-      src.buffer=buf; src.loop=true; filt.type='lowpass'; filt.frequency.value=420;
-      g.gain.value=0.045;
+      src.buffer=buf; src.loop=true; filt.type='lowpass'; filt.frequency.value=480;
+      g.gain.value=0.05;
       src.connect(filt); filt.connect(g); g.connect(a.destination); src.start();
     } catch(e){}
   }
@@ -187,7 +264,7 @@ let crowdStarted = false;
 
 // ─── TEAMS & FLAGGEN ──────────────────────────────────────────────────────────
 const TEAMS = [
-  { name:'DEUTSCHLAND', shirt:'#F2F2F2', sleeves:'#1a1a1a', shorts:'#15151a', accent:'#d10000', flag:{t:'h',c:['#111','#d00','#fc0']} },
+  { name:'DEUTSCHLAND', shirt:'#EFEFF2', sleeves:'#EFEFF2', shorts:'#16161c', accent:'#1a1a1a', flag:{t:'h',c:['#111','#d00','#fc0']} },
   { name:'BRASILIEN',   shirt:'#FFD21A', sleeves:'#16a34a', shorts:'#1d4ed8', accent:'#16a34a', flag:{t:'brazil'} },
   { name:'ARGENTINIEN', shirt:'#74ACDF', sleeves:'#FFFFFF', shorts:'#15151a', accent:'#FFFFFF', stripes:true, flag:{t:'h',c:['#74ACDF','#fff','#74ACDF']} },
   { name:'FRANKREICH',  shirt:'#1e3a8a', sleeves:'#1e3a8a', shorts:'#F2F2F2', accent:'#ED2939', flag:{t:'v',c:['#002395','#fff','#ED2939']} },
@@ -586,64 +663,79 @@ function drawPitch() {
     ctx.fillStyle = i%2===0 ? '#2f9e3a' : '#268a31';
     ctx.fillRect(0, y0, W, y1-y0+1);
   }
-  // ── Linien (Perspektive: Tor oben, zur Kamera hin minimal breiter) ──
-  const gly = GOAL_LINE;             // Torauslinie
-  const box16Y = 336;                // 16-Meter-Linie (vorne)
-  const box5Y  = 214;                // 5-Meter-Linie (vorne)
+  // ── Linien in EINER konsistenten Perspektive (gemeinsamer Fluchtpunkt) ──
+  // Alle in die Tiefe laufenden Linien zielen auf VP=(W/2, VPY); dadurch sind
+  // 16er und 5er gleich perspektivisch und wirken parallel/korrekt genestet.
+  const gly = GOAL_LINE;             // Torauslinie (fern)
+  const VPY = -220;
+  const persp = (y) => (y - VPY) / (gly - VPY);   // 1 an der Torlinie, >1 zur Kamera
+  function box(hw, yFront){
+    const top = hw, bot = hw*persp(yFront);
+    ctx.beginPath();
+    ctx.moveTo(W/2-top, gly); ctx.lineTo(W/2-bot, yFront);
+    ctx.lineTo(W/2+bot, yFront); ctx.lineTo(W/2+top, gly);
+    ctx.stroke();
+  }
   ctx.strokeStyle='rgba(255,255,255,0.92)'; ctx.lineWidth=2; ctx.lineJoin='round'; ctx.lineCap='round';
 
-  // Torauslinie über die ganze Breite (verbindet alles)
+  // Torauslinie über die ganze Breite
   ctx.beginPath(); ctx.moveTo(0,gly); ctx.lineTo(W,gly); ctx.stroke();
-
-  // Strafraum (16 m) – breiter als das Tor, leicht nach unten geöffnet
-  ctx.beginPath();
-  ctx.moveTo(18, gly); ctx.lineTo(6, box16Y);
-  ctx.lineTo(W-6, box16Y); ctx.lineTo(W-18, gly);
-  ctx.stroke();
-
-  // Torraum (5 m) – schmal, dicht am Tor (außerhalb der Pfosten)
-  ctx.beginPath();
-  ctx.moveTo(GOAL.x-8, gly); ctx.lineTo(GOAL.x-16, box5Y);
-  ctx.lineTo(GOAL.x+GOAL.w+16, box5Y); ctx.lineTo(GOAL.x+GOAL.w+8, gly);
-  ctx.stroke();
+  box(94, 336);   // 16-Meter-Raum (breit, tief)
+  box(82, 214);   // 5-Meter-Raum (schmaler, flacher – außerhalb der Pfosten)
 
   // Strafraumbogen ("D") – wölbt sich unter die 16-m-Linie hinaus zur Kamera
   ctx.beginPath();
-  ctx.ellipse(SPOT.x, SPOT.y, 60, 50, 0, 0.80, Math.PI-0.80);
+  ctx.ellipse(SPOT.x, SPOT.y, 60, 52, 0, 0.76, Math.PI-0.76);
   ctx.stroke();
 
   // Elfmeterpunkt
   ctx.fillStyle='#fff'; ctx.beginPath(); ctx.arc(SPOT.x, SPOT.y, 2.2, 0, 7); ctx.fill();
-
-  // Eckfahnen an der Torauslinie
-  drawCornerFlag(7, gly, false);
-  drawCornerFlag(W-7, gly, true);
 }
 
-function drawCornerFlag(x, y, right){
-  const dir = right ? -1 : 1;
-  px(x, y-15, 1, 15, '#eef2f6');                       // Mast
-  px(x-1, y-1, 3, 2, '#cfd6de');                        // Fuß
-  const wave = Math.sin((gs.t||0)*0.12 + (right?1:0))*1.2;
-  ctx.fillStyle = '#e23b3b';
-  ctx.beginPath();
-  ctx.moveTo(x+dir, y-15);
-  ctx.lineTo(x+dir*9, y-13+wave);
-  ctx.lineTo(x+dir, y-9);
-  ctx.closePath(); ctx.fill();
-}
-
-function drawGoal(withNet=true) {
-  const g=GOAL;
-  // Netz
-  if (withNet) {
-    ctx.fillStyle='rgba(225,235,245,0.10)'; ctx.fillRect(g.x,g.y,g.w,g.h);
-    ctx.strokeStyle='rgba(235,242,250,0.35)'; ctx.lineWidth=1;
-    for (let x=g.x; x<=g.x+g.w; x+=8){ ctx.beginPath(); ctx.moveTo(x,g.y); ctx.lineTo(x,g.y+g.h); ctx.stroke(); }
-    for (let y=g.y; y<=g.y+g.h; y+=7){ ctx.beginPath(); ctx.moveTo(g.x,y); ctx.lineTo(g.x+g.w,y); ctx.stroke(); }
+// Netz-Gitter über ein Viereck (A=oben-links, B=oben-rechts, C=unten-rechts, D=unten-links)
+function meshQuad(A,B,C,D,nx,ny,alpha){
+  ctx.strokeStyle='rgba(238,244,252,'+alpha+')'; ctx.lineWidth=1;
+  for (let i=0;i<=nx;i++){ const t=i/nx;
+    ctx.beginPath();
+    ctx.moveTo(A.x+(B.x-A.x)*t, A.y+(B.y-A.y)*t);
+    ctx.lineTo(D.x+(C.x-D.x)*t, D.y+(C.y-D.y)*t); ctx.stroke();
   }
-  // Pfosten & Latte (mit Schatten)
-  ctx.fillStyle='#d7dde6';
+  for (let j=0;j<=ny;j++){ const s=j/ny;
+    ctx.beginPath();
+    ctx.moveTo(A.x+(D.x-A.x)*s, A.y+(D.y-A.y)*s);
+    ctx.lineTo(B.x+(C.x-B.x)*s, B.y+(C.y-B.y)*s); ctx.stroke();
+  }
+}
+
+// Dreidimensionales Tor: Front-Rahmen, Hinterpfosten und Netz auf Rück-, Dach- und Seitenflächen
+function drawGoal(withNet=true){
+  const g=GOAL, DZ=22, DX=16;                 // Tiefe (nach oben) und Verjüngung
+  // Front-Ecken
+  const FTL={x:g.x,y:g.y}, FTR={x:g.x+g.w,y:g.y}, FBL={x:g.x,y:g.y+g.h}, FBR={x:g.x+g.w,y:g.y+g.h};
+  // Hinter-Ecken (höher = ferner, eingerückt)
+  const BTL={x:g.x+DX,y:g.y-DZ}, BTR={x:g.x+g.w-DX,y:g.y-DZ}, BBL={x:g.x+DX,y:g.y+g.h-DZ}, BBR={x:g.x+g.w-DX,y:g.y+g.h-DZ};
+
+  if (withNet){
+    // Rückwand (gefüllt + dichtes Netz) für Tiefe
+    ctx.fillStyle='rgba(16,24,40,0.5)';
+    ctx.beginPath(); ctx.moveTo(BTL.x,BTL.y); ctx.lineTo(BTR.x,BTR.y); ctx.lineTo(BBR.x,BBR.y); ctx.lineTo(BBL.x,BBL.y); ctx.closePath(); ctx.fill();
+    meshQuad(BTL,BTR,BBR,BBL, 14, 10, 0.34);
+    // Dach-Netz und Seiten-Netze (schräg -> Tiefeneindruck)
+    meshQuad(FTL,FTR,BTR,BTL, 14, 4, 0.22);   // oben
+    meshQuad(FTL,BTL,BBL,FBL, 4, 10, 0.20);   // links
+    meshQuad(FTR,BTR,BBR,FBR, 4, 10, 0.20);   // rechts
+  }
+  // Hinterpfosten + hintere Latte (dünn, grau)
+  ctx.strokeStyle='#9aa6b6'; ctx.lineWidth=2; ctx.lineCap='round';
+  ctx.beginPath(); ctx.moveTo(BTL.x,BTL.y); ctx.lineTo(BBL.x,BBL.y);
+  ctx.moveTo(BTR.x,BTR.y); ctx.lineTo(BBR.x,BBR.y);
+  ctx.moveTo(BTL.x,BTL.y); ctx.lineTo(BTR.x,BTR.y); ctx.stroke();
+  // Tiefen-Streben oben (verbinden Front-Latte mit Hinter-Latte)
+  ctx.strokeStyle='#c3ccd8'; ctx.lineWidth=2;
+  ctx.beginPath(); ctx.moveTo(FTL.x,FTL.y); ctx.lineTo(BTL.x,BTL.y);
+  ctx.moveTo(FTR.x,FTR.y); ctx.lineTo(BTR.x,BTR.y); ctx.stroke();
+  // Front-Rahmen (dick, weiß mit Lichtkante)
+  ctx.fillStyle='#cfd6e0';
   ctx.fillRect(g.x-4, g.y-4, 4, g.h+4);
   ctx.fillRect(g.x+g.w, g.y-4, 4, g.h+4);
   ctx.fillRect(g.x-4, g.y-4, g.w+8, 4);
@@ -853,52 +945,62 @@ function drawCountry(){
 
 // ─── GROSSE ROLLEN-ICONS ──────────────────────────────────────────────────────
 function drawGloveBig(cx, cy){ // Torwart-Handschuh, aufrecht
-  const Y='#ecc636', YL='#ffe27a', YD='#b8951f', NV='#26365c', NVL='#3b5183';
+  const Y='#ecc636', YL='#ffe27a', YD='#b8951f', NV='#26365c', NVL='#3b5183', ST='#d23b3b';
   ctx.save(); ctx.translate(cx,cy);
-  // Stulpe
-  ctx.fillStyle=NV;  rr(-20,16,40,16,5); ctx.fill();
-  ctx.fillStyle=NVL; rr(-20,16,40,5,3); ctx.fill();
-  ctx.fillStyle=Y;   rr(-9,23,18,5,2); ctx.fill();           // Verschluss
-  // Finger (4)
-  for (let i=0;i<4;i++){ const fx=-19+i*10;
-    ctx.fillStyle=YD; rr(fx-1,-33,10,31,4); ctx.fill();
-    ctx.fillStyle=Y;  rr(fx,-32,8,29,4); ctx.fill();
-    ctx.fillStyle=YL; rr(fx+1,-31,3,13,2); ctx.fill();
+  // Finger (4, Mittelfinger am längsten, abgerundete Kuppen)
+  const fh=[25,30,29,24];
+  for (let i=0;i<4;i++){ const fx=-18+i*10, h=fh[i];
+    ctx.fillStyle=YD; rr(fx-1,-h+4,10,h,5); ctx.fill();
+    ctx.fillStyle=Y;  rr(fx,-h+4,8,h-1,4); ctx.fill();
+    ctx.fillStyle=YL; rr(fx+1,-h+5,3,11,2); ctx.fill();
   }
-  // Daumen
-  ctx.fillStyle=YD; rr(15,-8,15,16,7); ctx.fill();
-  ctx.fillStyle=Y;  rr(16,-7,13,14,6); ctx.fill();
-  ctx.fillStyle=YL; rr(19,-5,3,9,2); ctx.fill();
-  // Handfläche
-  ctx.fillStyle=YD; rr(-21,-12,42,30,9); ctx.fill();
-  ctx.fillStyle=Y;  rr(-20,-11,40,28,8); ctx.fill();
-  ctx.fillStyle=YL; rr(-16,-9,17,9,4); ctx.fill();
-  ctx.fillStyle=YD; rr(-20,9,40,8,7); ctx.fill();
+  // Daumen (seitlich)
+  ctx.fillStyle=YD; rr(14,-7,17,15,8); ctx.fill();
+  ctx.fillStyle=Y;  rr(15,-6,15,13,7); ctx.fill();
+  ctx.fillStyle=YL; rr(18,-4,3,8,2); ctx.fill();
+  // Handfläche / Polster
+  ctx.fillStyle=YD; rr(-21,-11,42,30,11); ctx.fill();
+  ctx.fillStyle=Y;  rr(-20,-10,40,28,10); ctx.fill();
+  ctx.fillStyle=YL; rr(-16,-8,17,9,4); ctx.fill();          // Licht
+  ctx.fillStyle=YD; rr(-20,11,40,7,7); ctx.fill();          // Schatten
   // Daumenfalte
-  ctx.strokeStyle=YD; ctx.lineWidth=1.5;
-  ctx.beginPath(); ctx.arc(9,2,9,-1.1,1.0); ctx.stroke();
+  ctx.strokeStyle=YD; ctx.lineWidth=1.5; ctx.beginPath(); ctx.arc(10,4,9,-1.2,0.9); ctx.stroke();
+  // Stulpe mit Verschluss-Strap
+  ctx.fillStyle=NV;  rr(-19,17,38,15,5); ctx.fill();
+  ctx.fillStyle=NVL; rr(-19,17,38,4,3); ctx.fill();
+  ctx.fillStyle=ST;  rr(-12,22,24,4,2); ctx.fill();
   ctx.restore();
 }
-function drawBootBig(cx, cy){ // Fußballschuh, Spitze nach rechts
-  const B='#23232c', BL='#41414f', BD='#141419', WH='#eef0f6', AC='#e23b3b';
-  ctx.save(); ctx.translate(cx,cy);
-  // Sohle + Stollen
-  ctx.fillStyle=BD; rr(-25,10,53,9,4); ctx.fill();
-  for (let i=0;i<5;i++){ ctx.fillStyle=BD; rr(-21+i*11,18,5,4,1); ctx.fill(); }
-  // Schaft / Knöchel
-  ctx.fillStyle=B;  rr(-27,-17,18,23,7); ctx.fill();
-  ctx.fillStyle=BL; rr(-25,-15,7,16,4); ctx.fill();
-  // Körper
-  ctx.fillStyle=B;  rr(-23,-6,46,18,8); ctx.fill();
-  // Spitze
-  ctx.fillStyle=B;  rr(13,-3,17,15,8); ctx.fill();
-  ctx.fillStyle=BL; rr(15,-1,9,5,3); ctx.fill();
-  // Glanz oben
-  ctx.fillStyle=BL; rr(-21,-4,30,5,3); ctx.fill();
-  // Akzentstreifen
-  ctx.fillStyle=AC; rr(-7,3,24,4,2); ctx.fill();
-  // Schnürung
-  for (let i=0;i<3;i++){ ctx.fillStyle=WH; rr(-5+i*7,-3,4,2,1); ctx.fill(); }
+function drawBootBig(cx, cy){ // Fußballschuh im Seitenprofil, Spitze nach rechts
+  const UP='#2f6fe6', UPL='#5b93f2', UPD='#1c4aa0', SOLE='#eceef4', SOLED='#aeb6c6', WH='#ffffff', AC='#ffd23f', DK='#15151b';
+  ctx.save(); ctx.translate(cx,cy-1);
+  // Sohle
+  ctx.fillStyle=SOLE;
+  ctx.beginPath();
+  ctx.moveTo(-25,3); ctx.lineTo(29,1); ctx.quadraticCurveTo(35,3,31,9);
+  ctx.lineTo(-23,11); ctx.quadraticCurveTo(-28,8,-25,3); ctx.closePath(); ctx.fill();
+  ctx.fillStyle=SOLED; ctx.beginPath(); ctx.moveTo(-23,11); ctx.lineTo(31,9); ctx.lineTo(30,12); ctx.lineTo(-22,13); ctx.closePath(); ctx.fill();
+  // Stollen
+  ctx.fillStyle=DK;
+  for (let i=0;i<5;i++){ const sx=-19+i*11; ctx.beginPath(); ctx.moveTo(sx,12); ctx.lineTo(sx+5,12); ctx.lineTo(sx+4,17); ctx.lineTo(sx+1,17); ctx.closePath(); ctx.fill(); }
+  // Oberteil (Silhouette: Ferse -> niedriger Knöchel -> Spann -> Spitze)
+  ctx.fillStyle=UP;
+  ctx.beginPath();
+  ctx.moveTo(-24,3);
+  ctx.lineTo(-24,-5);
+  ctx.quadraticCurveTo(-23,-13,-12,-13);
+  ctx.quadraticCurveTo(-6,-13,-3,-7);
+  ctx.quadraticCurveTo(0,-3,11,-2);
+  ctx.lineTo(22,-1);
+  ctx.quadraticCurveTo(30,0,29,3);
+  ctx.closePath(); ctx.fill();
+  // Schatten unten / Glanz oben
+  ctx.fillStyle=UPD; ctx.fillRect(-24,1,53,2);
+  ctx.fillStyle=UPL; ctx.beginPath(); ctx.moveTo(-19,-9); ctx.quadraticCurveTo(-7,-11,2,-6); ctx.lineTo(0,-4); ctx.quadraticCurveTo(-8,-8,-18,-6); ctx.closePath(); ctx.fill();
+  // Akzent-Swoosh
+  ctx.strokeStyle=AC; ctx.lineWidth=2.5; ctx.lineCap='round'; ctx.beginPath(); ctx.moveTo(-15,2); ctx.quadraticCurveTo(3,-2,21,1); ctx.stroke();
+  // Schnürung auf dem Spann
+  ctx.fillStyle=WH; for (let i=0;i<4;i++){ ctx.fillRect(-11+i*6, -8+i, 5, 2); }
   ctx.restore();
 }
 // Flagge + Teamname zentriert als Gruppe
@@ -960,7 +1062,7 @@ function drawAim(){
   for (let i=0;i<6;i++){ ctx.fillStyle=i%2?'#268a31':'#2f9e3a'; ctx.fillRect(0,250+i*26,W,26); }
 
   const isShooter = gs.aimPhase==='shooter';
-  textC(isShooter?'WOHIN SCHIESSEN?':'WOHIN HECHTEN?', W/2, 64, '#ffd23f', 2);
+  textC(isShooter?'WOHIN SCHIESSEN?':'WOHIN SPRINGEN?', W/2, 64, '#ffd23f', 2);
 
   // Timer-Balken
   const frac=clamp(gs.aimTimer/7,0,1), bw=W-40;
@@ -1350,6 +1452,7 @@ function executeShot(){
   gs.slipDir = Math.random()<0.5 ? -1 : 1;
   gs.shotResult = calcResult(gs.shooterZone, gs.keeperZone);
   gs.state='shot'; gs.shotT=0; gs.isReplay=false;
+  gs.confetti=[];   // altes Konfetti vom vorigen Tor entfernen
   kickPlayed=false; sfxPlayed=false; whistleDone=false; gs.pendingAdvance=false;
 }
 function advanceAfterShot(){
