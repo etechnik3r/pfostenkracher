@@ -615,15 +615,17 @@ function drawKeeperDive(cx, cy, pIdx, tilt){
   // Handschuhe
   px(-tw/2-2, -th/2-11, 4, 5, glove); px(-tw/2-2, -th/2-11, 4, 2, '#fff0b0');
   px(tw/2-1,  -th/2-11, 4, 5, glove); px(tw/2-1,  -th/2-11, 4, 2, '#fff0b0');
-  // Kopf zur Kamera/zum Schützen gewandt: Gesicht mit Augen, Haare oben
-  const hy = -th/2-12;
+  // Hals (verbindet Kopf und Rumpf)
+  px(-2, -th/2-2, 4, 3, skin);
+  // Kopf sitzt auf den Schultern, Gesicht zur Kamera (Augen sichtbar)
+  const hy = -th/2-7;
   px(-3, hy, 6, 6, skin);                          // Gesicht
   px(-3, hy, 6, 2, shade(skin,0.1));               // Licht
   px(-2, hy+3, 1, 2, '#23303f'); px(1, hy+3, 1, 2, '#23303f');   // Augen
   px(-3, hy-1, 6, 3, hair);                        // Haaransatz
   px(-3, hy-1, 6, 1, shade(hair,0.25));
   px(-3, hy, 1, 3, hair); px(2, hy, 1, 3, hair);   // Seiten
-  if (big){ px(-4,hy+1,1,8,hair); px(3,hy+1,1,8,hair); }   // Jonte: lange Haare seitlich
+  if (big){ px(-4,hy+1,1,7,hair); px(3,hy+1,1,7,hair); }   // Jonte: lange Haare seitlich
   ctx.restore();
   return keeperGlove(cx, cy, tilt, big);
 }
@@ -805,59 +807,51 @@ function drawGoal(withNet=true){
 }
 
 // ─── ZONEN (4×3 = 12) ─────────────────────────────────────────────────────────
-const ZC = 4, ZR = 3, NZ = ZC*ZR;
+const ZC = 5, ZR = 3, NZ = ZC*ZR;     // 5 Spalten -> echte Mitte (direkt auf den Torwart)
+const ZMID = (ZC/2)|0;                 // Mittelspalte
 function zoneRect(geom, z){
   const col=z%ZC, row=(z/ZC)|0;
   return { x: geom.x + col*geom.w/ZC, y: geom.y + row*geom.h/ZR, w: geom.w/ZC, h: geom.h/ZR, col, row };
 }
 function zoneCenter(geom, z){ const r=zoneRect(geom,z); return { x:r.x+r.w/2, y:r.y+r.h/2 }; }
 
-// ─── ERGEBNIS-BERECHNUNG (wahrscheinlichkeitsbasiert) ─────────────────────────
+// ─── ERGEBNIS-BERECHNUNG (Risiko/Ertrag) ──────────────────────────────────────
+// Mitte: leicht zu treffen, aber der Torwart hält dort eher (Körperdeckung).
+// Außen: schwer zu halten, dafür höhere Gefahr, das Tor ganz zu verfehlen.
 function calcResult(sZone, kZone){
   const sCol=sZone%ZC, sRow=(sZone/ZC)|0;
   const kCol=kZone%ZC, kRow=(kZone/ZC)|0;
+  const colDist = Math.abs(sCol-ZMID);   // 0 = Mitte, bis 2 = ganz außen
+  const topRow  = (sRow===0);
 
   // 1) Ausrutscher des Schützen
-  if (Math.random() < 0.035) return { goal:false, event:'slip-shooter' };
+  if (Math.random() < 0.03) return { goal:false, event:'slip-shooter' };
 
-  // 2) Schussgenauigkeit: Eck-/Oben-Platzierung ist riskanter
-  const outerCol = (sCol===0 || sCol===ZC-1);
-  const topRow   = (sRow===0);
-  let missGoal = 0.05;
-  if (outerCol) missGoal += 0.11;
-  if (topRow)   missGoal += 0.09;
-  if (outerCol && topRow) missGoal += 0.06;
+  // 2) Schuss verfehlt das Tor – Risiko steigt nach außen/oben
+  let missGoal = 0.02 + 0.075*colDist + (topRow?0.07:0);
+  if (colDist===2) missGoal += 0.05;
   if (Math.random() < missGoal) {
-    // Fehlschuss: drüber, am Pfosten oder klar daneben (vorbei)
     const r = Math.random();
-    if (topRow && outerCol) {                 // hohe Ecke: alles möglich
-      if (r<0.34) return { goal:false, event:'over', side:(sCol===0?-1:1) };
-      if (r<0.6)  return { goal:false, event:'wide', side:(sCol===0?-1:1) };
-      return { goal:false, event:'post', side:(sCol===0?-1:1) };
-    }
-    if (topRow) {                             // oben Mitte: meist drüber
-      if (r<0.7) return { goal:false, event:'over', side:0 };
-      return { goal:false, event:'post', side:(Math.random()<0.5?-1:1) };
-    }
-    // außen (Eckpfosten): Pfosten oder vorbei
-    if (r<0.45) return { goal:false, event:'post', side:(sCol===0?-1:1) };
-    return { goal:false, event:'wide', side:(sCol===0?-1:1) };
+    if (topRow && r<0.45) return { goal:false, event:'over', side:(sCol<ZMID?-1:sCol>ZMID?1:0) };
+    if (colDist>=1 && r<0.7) return { goal:false, event:'wide', side:(sCol<ZMID?-1:1) };
+    return { goal:false, event:'post', side:(sCol<ZMID?-1:1) };
   }
 
-  // 3) Torwart-Parade: Wahrscheinlichkeit fällt mit Distanz Schuss<->Sprung
-  const dc = sCol-kCol, dr = sRow-kRow;
-  const dist = Math.sqrt(dc*dc + dr*dr);
-  let saveP = 0.90 * Math.exp(-0.85*dist);     // d0~0.90, d1~0.38, d1.41~0.27, d2~0.16
-  // Mitte ist für den Keeper etwas leichter zu erlaufen, Ecken schwerer:
-  if (outerCol) saveP *= 0.9;
-  saveP = clamp(saveP, 0.02, 0.92);
+  // 3) Parade: Distanz Schuss<->Sprung + zentrale Körperdeckung
+  const dc=sCol-kCol, dr=sRow-kRow;
+  const dist=Math.sqrt(dc*dc+dr*dr);
+  let saveP = 0.88 * Math.exp(-0.8*dist);
+  // Mitte deckt der Torwart auch ohne perfektes Raten mit dem Körper:
+  const centerFloor = colDist===0 ? 0.42 : (colDist===1 ? 0.12 : 0.0);
+  saveP = saveP + (1-saveP)*centerFloor;
+  if (colDist===2 && dist>0.5) saveP *= 0.85;     // ganz außen schwerer zu halten
+  saveP = clamp(saveP, 0.02, 0.95);
   if (Math.random() < saveP) {
-    // seltener Abpraller -> trotzdem Tor (Nachschuss-Gefühl)
-    if (Math.random() < 0.05) return { goal:true, event:'rebound' };
+    if (Math.random() < 0.04) return { goal:true, event:'rebound' };
     return { goal:false, event:'saved' };
   }
 
-  // 4) Tor — seltener Torwart-Patzer mit eigener Botschaft
+  // 4) Tor (selten Torwart-Patzer)
   if (Math.random() < 0.03) return { goal:true, event:'keeper-slip' };
   return { goal:true, event:'goal' };
 }
@@ -1200,49 +1194,61 @@ function drawShot(){
   const sCenter = zoneCenter(GOAL, gs.shooterZone);
 
   // Ziel des Balls
-  const missSide = gs.shotResult.side || (gs.shooterZone%ZC<2 ? -1 : 1);
+  const missSide = (gs.shotResult.side!==undefined) ? gs.shotResult.side : (gs.shooterZone%ZC<ZMID ? -1 : 1);
   let target = { x:sCenter.x, y:sCenter.y };
   if (ev==='over') target = { x:sCenter.x + missSide*16, y:GOAL.y-16 };
   if (ev==='post') target = { x:(missSide<0?GOAL.x-3:GOAL.x+GOAL.w+3), y:sCenter.y };
   if (ev==='wide') target = { x:(missSide<0?GOAL.x-22:GOAL.x+GOAL.w+22), y:sCenter.y-6 };
   if (ev==='slip-shooter') target = { x:SPOT.x+(gs.slipDir||-1)*30, y:SPOT.y-18 };
 
-  // ── Torwart: realistischer Hechtsprung (aufrechte Figur wird gekippt) ──
-  // Bei einer PARADE hechtet er ZUM BALL; sonst zu seiner geratenen Ecke (sichtbar geschlagen).
+  // ── Torwart ──
+  // Bei einer PARADE bewegt er sich ZUM BALL; sonst zu seiner geratenen Ecke (sichtbar geschlagen).
+  // Mitte: nur ein Schritt / kleiner Sprung. Außen: Hechtsprung.
   const kPlayer = 1-gs.shooter, kBig = (kPlayer===1);
   const kZoneVis = isSave ? gs.shooterZone : gs.keeperZone;
   const kCenter = zoneCenter(GOAL, kZoneVis);
-  const kRow = (kZoneVis/ZC)|0;
+  const kCol = kZoneVis%ZC, kRow = (kZoneVis/ZC)|0;
+  const isCenterK = (kCol===ZMID);
   const groundY = GOAL_LINE-2;
-  const standY  = groundY-17;                          // Rumpfmitte im Stand
-  const launch  = T.kick + 4;                          // kurze Reaktionszeit
-  const sideSign = kCenter.x < W/2 ? -1 : (kCenter.x > W/2 ? 1 : 1);
-  const tiltMag  = kRow===2 ? 1.5 : (kRow===0 ? 1.02 : 1.28);   // tiefe Ecke flacher, hohe Ecke aufrechter
-  const tiltFull = sideSign * tiltMag;
-  const Lr = (kBig?7:6)+9;                              // Rumpfmitte -> Handschuhe
-  const pivotEndX = kCenter.x - Math.sin(tiltFull)*Lr;
-  const pivotEndY = kCenter.y + Math.cos(tiltFull)*Lr;
-  let kDiving=false, pivX=W/2, pivY=standY, tilt=0, crouch=0;
-  if (t < launch){
-    // Bereitschaft; in den letzten Frames leichtes In-die-Knie-Gehen (Vorladen)
-    crouch = clamp((t-(launch-7))/7, 0, 1) * 3;
-  } else if (t <= T.reach){
-    kDiving=true;
-    const p = clamp((t-launch)/(T.reach-launch),0,1);
-    const eo = 1-(1-p)*(1-p);                            // easeOut: explosiver Absprung, dann ausrollen
-    pivX = lerp(W/2, pivotEndX, eo);                      // sofort seitwärts (kein Hochspringen-dann-Drehen)
-    pivY = lerp(standY, pivotEndY, eo) - 8*Math.sin(p*Math.PI);   // flacher Absprung-Bogen
-    const tp = clamp(p/0.4,0,1);                          // Körperwinkel SOFORT beim Absprung setzen,
-    tilt = tiltFull * (tp*tp*(3-2*tp));                   // danach gehalten -> kein Drehen in der Luft
+  const standY  = groundY-17;
+  const launch  = T.kick + 4;
+  const p1 = clamp((t-launch)/(T.reach-launch),0,1), eo1 = 1-(1-p1)*(1-p1);
+
+  let kMode='stand', pivX=W/2, pivY=standY, tilt=0, crouch=0, kFeetY=groundY, kStepX=W/2;
+  let kGlove={x:W/2,y:standY}, landT=1e9;
+
+  if (isCenterK){
+    // ── Mitte: aufrecht bleiben, Ausgleichsschritt + ggf. kleiner Sprung ──
+    const hop = kRow===0 ? 12 : (kRow===1 ? 4 : 0);
+    if (t < launch){ crouch = clamp((t-(launch-7))/7,0,1)*3; kMode='stand'; }
+    else { kMode='step';
+      kStepX = lerp(W/2, kCenter.x, eo1);
+      kFeetY = (t<=T.reach) ? groundY - hop*Math.sin(p1*Math.PI) : groundY;   // kleiner Sprung -> Landung
+    }
+    kGlove = { x:kStepX, y: clamp(kCenter.y, kFeetY-26, kFeetY-4) };          // Ball am Körper geblockt
   } else {
-    kDiving=true;
-    const ft = t - T.reach;
-    pivX = pivotEndX;
-    pivY = Math.min(groundY-5, pivotEndY + 0.07*ft*ft);   // Schwerkraft -> fällt zu Boden & landet
-    tilt = tiltFull;
+    // ── Außen: echter Hechtsprung (aufrechte Figur wird gekippt) ──
+    const sideSign = kCenter.x < W/2 ? -1 : 1;
+    const tiltMag  = kRow===2 ? 1.5 : (kRow===0 ? 1.02 : 1.28);
+    const tiltFull = sideSign * tiltMag;
+    const Lr = (kBig?7:6)+9;
+    const pivotEndX = kCenter.x - Math.sin(tiltFull)*Lr;
+    const pivotEndY = kCenter.y + Math.cos(tiltFull)*Lr;
+    if (t < launch){ crouch = clamp((t-(launch-7))/7,0,1)*3; kMode='stand'; }
+    else if (t <= T.reach){ kMode='dive';
+      pivX = lerp(W/2, pivotEndX, eo1);
+      pivY = lerp(standY, pivotEndY, eo1) - 8*Math.sin(p1*Math.PI);
+      const tp = clamp(p1/0.4,0,1);
+      tilt = tiltFull * (tp*tp*(3-2*tp));                 // Körperwinkel sofort beim Absprung gesetzt
+    } else { kMode='dive';
+      const ft = t - T.reach;
+      pivX = pivotEndX;
+      pivY = Math.min(groundY-5, pivotEndY + 0.07*ft*ft);
+      tilt = tiltFull;
+    }
+    kGlove = keeperGlove(pivX, pivY, tilt, kBig);
+    landT  = T.reach + Math.sqrt(Math.max(0,(groundY-5-pivotEndY)/0.07));
   }
-  const kGlove = keeperGlove(pivX, pivY, tilt, kBig);
-  const landT  = T.reach + Math.sqrt(Math.max(0,(groundY-5-pivotEndY)/0.07));
 
   // ── Schütze: steht zuerst (Gesicht zur Kamera), dreht sich um, läuft an, schießt ──
   let shooterAnim='idle', shX=SPOT.x-15, shY=SPOT.y+38, shBack=false, squash=1;
@@ -1263,9 +1269,10 @@ function drawShot(){
   if (t < T.kick){ ballX=SPOT.x; ballY=SPOT.y; ballR=5; }
   else {
     const fp = clamp((t-T.kick)/(T.reach-T.kick), 0, 1);
-    ballX = lerp(SPOT.x, target.x, fp);
-    ballY = lerp(SPOT.y, target.y, fp) - Math.sin(fp*Math.PI)*16;
-    ballR = lerp(5, 2.6, fp);
+    const fv = 1-(1-fp)*(1-fp);                 // easeOut: Ball verlässt den Fuß mit Höchsttempo, rollt aus
+    ballX = lerp(SPOT.x, target.x, fv);
+    ballY = lerp(SPOT.y, target.y, fv) - Math.sin(fp*Math.PI)*5;   // nur flacher Bogen
+    ballR = lerp(5, 2.6, fv);
     if (t>=T.reach){
       if (isSave){ ballX=kGlove.x; ballY=kGlove.y; ballR=3.2; }                    // in den Handschuhen, fällt mit dem Keeper
       else if (ev==='post'){ const bp=clamp((t-T.reach)/30,0,1); ballX=lerp(target.x,target.x+(target.x<W/2?22:-22),bp); ballY=lerp(target.y,SPOT.y-8,bp)-Math.sin(bp*Math.PI)*9; }
@@ -1284,17 +1291,18 @@ function drawShot(){
   }
 
   // Bodenschatten des Keepers (bleibt am Boden, schrumpft beim Sprung)
-  if (kDiving){
+  if (kMode==='dive'){
     const hgt = clamp((groundY-pivY)/55,0,1);
     ctx.fillStyle='rgba(0,0,0,'+(0.24*(1-hgt)+0.04).toFixed(3)+')';
     ctx.beginPath(); ctx.ellipse(pivX, groundY+2, 12*(1-0.4*hgt), 3.2*(1-0.4*hgt), 0, 0, 7); ctx.fill();
   }
-  // Keeper zeichnen: stehend bis zum Absprung, danach gekippte Hechtfigur
-  if (kDiving) drawKeeperDive(pivX, pivY, kPlayer, tilt);
+  // Keeper zeichnen: Hechtfigur außen, aufrechter Schritt/kleiner Sprung in der Mitte
+  if (kMode==='dive') drawKeeperDive(pivX, pivY, kPlayer, tilt);
+  else if (kMode==='step') drawPlayer(kStepX, kFeetY, kPlayer, kPlayer, 'ready', gs.t, 1, {keeper:true});
   else drawPlayer(W/2, groundY+crouch, kPlayer, kPlayer, 'ready', gs.t, 1, {keeper:true});
-  // Landungs-Staubwolke (dezenter Eyecatcher)
-  if (t>landT-1 && t<landT+22){
-    const d=clamp((t-landT)/22,0,1), dir=-sideSign;
+  // Landungs-Staubwolke (nur beim Hechtsprung)
+  if (kMode==='dive' && t>landT-1 && t<landT+22){
+    const d=clamp((t-landT)/22,0,1), dir=(kCenter.x<W/2)?1:-1;
     for (let i=0;i<6;i++){
       const a=Math.PI*(0.12+0.72*i/5), rad=3+d*16;
       ctx.fillStyle='rgba(228,231,218,'+(0.4*(1-d)).toFixed(3)+')';
@@ -1463,12 +1471,22 @@ function startRoundHandoff(isShooterTurn){
 }
 // ─── KI ───────────────────────────────────────────────────────────────────────
 function aiShooterZone(){
-  const good=[8,11,0,3,4,7];            // bevorzugt platzierte Ecken / Seiten
-  return Math.random()<0.7 ? good[Math.random()*good.length|0] : (Math.random()*NZ|0);
+  // wählt Spalte: meist halb-außen (guter Kompromiss), manchmal ganz außen oder Mitte
+  let col; const rc=Math.random();
+  if (rc<0.5) col = (Math.random()<0.5 ? ZMID-1 : ZMID+1);   // halb-außen
+  else if (rc<0.8) col = (Math.random()<0.5 ? 0 : ZC-1);     // ganz außen (riskant)
+  else col = ZMID;                                           // direkt aufs Tor
+  const row = Math.random()<0.5 ? 2 : (Math.random()<0.5 ? 1 : 0);   // eher mittlere/untere Reihe
+  return row*ZC + clamp(col,0,ZC-1);
 }
 function aiKeeperZone(){
-  const guess=[8,11,4,7,9,10,0,3];      // rät plausibel, ohne zu schummeln
-  return Math.random()<0.55 ? guess[Math.random()*guess.length|0] : (Math.random()*NZ|0);
+  // rät plausibel (ohne zu schummeln)
+  let col; const rc=Math.random();
+  if (rc<0.45) col = (Math.random()<0.5 ? ZMID-1 : ZMID+1);
+  else if (rc<0.7) col = ZMID;
+  else col = (Math.random()<0.5 ? 0 : ZC-1);
+  const row = (Math.random()*3)|0;
+  return clamp(row*ZC + clamp(col,0,ZC-1), 0, NZ-1);
 }
 function aiCommit(){
   if (gs.aiIsShooter) gs.shooterZone = aiShooterZone();
