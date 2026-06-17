@@ -432,7 +432,7 @@ function newSession() {
     aimTimer:7, aimTick:null, aimPhase:'shooter',
     handoffTarget:0, handoffIsShooter:true,
     chooseOrder:[0,1], choosePhase:0, countryScroll:0,
-    turnMode:'alt', batchShots:[[],[]], batchSaves:[[],[]], batchOrder:[], batchOi:0, batchPlayer:0, batchKind:'shots', batchIdx:0,
+    turnMode:'alt', batchShots:[[],[]], batchSaves:[[],[]], batchOrder:[], batchOi:0, batchPlayer:0, batchKind:'shots', batchIdx:0, batchPaused:false,
     shotResult:null, shotT:0, pendingAdvance:false, isReplay:false,
     confetti:[], shake:0,
   };
@@ -1452,13 +1452,19 @@ function drawShot(){
   if (t>T.reach+6){
     let txt='', col='#fff';
     if (ev==='goal'||ev==='rebound'){ txt='TOR!'; col='#ffd23f'; }
-    else if (ev==='keeper-slip'){ txt='PATZER – TOR!'; col='#ffd23f'; }
+    else if (ev==='keeper-slip'){ txt='PATZER!'; col='#ffd23f'; }   // zweizeilig (unten)
     else if (ev==='saved'){ txt='GEHALTEN!'; col='#4bc8ff'; }
     else if (ev==='post'){ txt='PFOSTEN!'; col='#ffb0b0'; }
     else if (ev==='over'){ txt='DRÜBER!'; col='#ff8a8a'; }
     else if (ev==='wide'){ txt='DANEBEN!'; col='#ff8a8a'; }
     else if (ev==='slip-shooter'){ txt='AUSGERUTSCHT!'; col='#ff9a3a'; }
-    textC(txt, W/2, 92, col, 3);
+    if (ev==='keeper-slip'){                       // zwei Zeilen, sonst läuft es aus dem Bild
+      textC('PATZER!', W/2, 76, col, 3);
+      textC('TOR!',    W/2, 106, col, 3);
+    } else {
+      const sc = textWidth(txt,3) <= W-10 ? 3 : 2;  // lange Wörter automatisch kleiner
+      textC(txt, W/2, 92, col, sc);
+    }
   }
 
   drawConfetti();
@@ -1511,7 +1517,7 @@ function drawScoreboard(){
   const ev = gs.shotResult ? gs.shotResult.event : '';
   let oTxt='', oCol='#cfe0f7';
   if (ev==='goal'||ev==='rebound'){ oTxt=NAMES[gs.shooter]+' TRIFFT!'; oCol='#ffd23f'; }
-  else if (ev==='keeper-slip'){ oTxt='PATZER – TOR!'; oCol='#ffd23f'; }
+  else if (ev==='keeper-slip'){ oTxt='PATZER! TOR!'; oCol='#ffd23f'; }
   else if (ev==='saved'){ oTxt='PARADE!'; oCol='#4bc8ff'; }
   else if (ev==='post'){ oTxt='PFOSTEN!'; oCol='#ffb0b0'; }
   else if (ev==='over'){ oTxt='DRÜBER!'; oCol='#ff8a8a'; }
@@ -1521,15 +1527,27 @@ function drawScoreboard(){
 
   buttons=[];
   const batchAuto = (gs.turnMode==='batch' && !gs.suddenDeath);
-  // Sekundär: Schuss noch einmal ansehen · Primär: weiter
-  button('replay', W/2-66, 288, 132, 28, 'WIEDERHOLUNG', '#2c3f66', '#dce6f5');
-  button('next',   W/2-66, 324, 132, 32, 'WEITER', '#3fcf6a', '#04210f');
-  if (batchAuto) textC('LÄUFT AUTOMATISCH WEITER', W/2, 360, '#6f86a8', 1);
-
-  updateConfetti(); drawConfetti();
-
-  // Fünfer-Block: im Regelverlauf automatisch zum nächsten Schuss
-  if (batchAuto && gs.t>78) afterScoreboard();
+  if (batchAuto){
+    const AUTO=160;   // ~2,6 s bis automatisch weiter
+    button('replay', W/2-66, 280, 132, 26, 'WIEDERHOLUNG', '#2c3f66', '#dce6f5');
+    // links: Pause/Fortsetzen · rechts: jetzt weiter
+    button('pause', 24, 314, 84, 30, gs.batchPaused?'FORTSETZEN':'PAUSE', gs.batchPaused?'#c9a227':'#5a4636', gs.batchPaused?'#1a1200':'#ffe0a8');
+    button('next', 116, 314, 84, 30, 'WEITER', '#3fcf6a', '#04210f');
+    if (!gs.batchPaused){
+      // ablaufender Countdown-Balken unter dem Weiter-Knopf
+      const frac = clamp(1 - gs.t/AUTO, 0, 1);
+      ctx.fillStyle='rgba(0,0,0,0.4)'; rr(116, 347, 84, 5, 2); ctx.fill();
+      ctx.fillStyle='#3fcf6a'; rr(116, 347, Math.max(2,84*frac), 5, 2); ctx.fill();
+    } else {
+      textC('PAUSIERT', W/2, 352, '#ffd23f', 1);
+    }
+    updateConfetti(); drawConfetti();
+    if (!gs.batchPaused && gs.t>AUTO) afterScoreboard();
+  } else {
+    button('replay', W/2-66, 288, 132, 28, 'WIEDERHOLUNG', '#2c3f66', '#dce6f5');
+    button('next',   W/2-66, 324, 132, 32, 'WEITER', '#3fcf6a', '#04210f');
+    updateConfetti(); drawConfetti();
+  }
 }
 function drawMark(x,y,good){
   ctx.strokeStyle=good?'#04210f':'#2a0606'; ctx.lineWidth=2;
@@ -1611,7 +1629,7 @@ function recordBatchZone(z){
   }
 }
 function startBatchPlayback(){
-  gs.shooter=gs.firstShooter; gs.round=0; gs.shotInRound=0;
+  gs.shooter=gs.firstShooter; gs.round=0; gs.shotInRound=0; gs.batchPaused=false;
   beginBatchKick();
 }
 function beginBatchKick(){
@@ -1811,6 +1829,7 @@ function onClick(e){
     case 'scoreboard':
       if (id==='next'){ SFX.ui(); afterScoreboard(); }
       else if (id==='replay'){ SFX.ui(); startReplay(); }
+      else if (id==='pause'){ SFX.ui(); gs.batchPaused=!gs.batchPaused; gs.t=0; }   // Auto-Weiter pausieren / fortsetzen
       break;
     case 'end':
       if (id==='again'){ SFX.ui(); gs.confetti=[]; startCountrySelect(); }
