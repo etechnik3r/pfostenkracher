@@ -87,6 +87,13 @@
         <button type="button" class="seg-btn" data-mode="1">1 Spieler · KI</button>
       </div>
     </div>
+    <div class="field">
+      <label>Ablauf</label>
+      <div class="seg" id="flowSeg">
+        <button type="button" class="seg-btn" data-flow="alt">Abwechselnd</button>
+        <button type="button" class="seg-btn" data-flow="batch">Fünfer-Block</button>
+      </div>
+    </div>
     <div class="rowbtns">
       <button class="btn btn-ghost" id="ovCancel">Abbrechen</button>
       <button class="btn btn-primary" id="ovSave">Speichern</button>
@@ -406,6 +413,10 @@ let NAMES = loadNames();
 function loadSolo(){ try{ return localStorage.getItem('pk_solo')==='1'; }catch(e){ return false; } }
 function saveSolo(v){ try{ localStorage.setItem('pk_solo', v?'1':'0'); }catch(e){} }
 let SOLO = loadSolo();
+// Ablauf: false = abwechselnd (Standard), true = Fünfer-Block (alle 5 vorab tippen)
+function loadBatch(){ try{ return localStorage.getItem('pk_batch')==='1'; }catch(e){ return false; } }
+function saveBatch(v){ try{ localStorage.setItem('pk_batch', v?'1':'0'); }catch(e){} }
+let BATCH = loadBatch();
 function isAI(p){ return gs.singlePlayer && p===1; }   // KI steuert Spieler 2 (Jonte)
 
 // ─── SPIELZUSTAND ─────────────────────────────────────────────────────────────
@@ -415,12 +426,13 @@ function newSession() {
     state:'title', t:0,
     teams:[null,null],
     scores:[0,0], shots:[[],[]],
-    round:0, shotInRound:0, shooter:0, firstShooter:0, winner:-1,
+    round:0, shotInRound:0, shooter:0, firstShooter:0, winner:-1, endReason:'',
     suddenDeath:false,
     shooterZone:null, keeperZone:null,
     aimTimer:7, aimTick:null, aimPhase:'shooter',
     handoffTarget:0, handoffIsShooter:true,
     chooseOrder:[0,1], choosePhase:0, countryScroll:0,
+    turnMode:'alt', batchShots:[[],[]], batchSaves:[[],[]], batchOrder:[], batchOi:0, batchPlayer:0, batchKind:'shots', batchIdx:0,
     shotResult:null, shotT:0, pendingAdvance:false, isReplay:false,
     confetti:[], shake:0,
   };
@@ -1182,6 +1194,63 @@ function drawGoalAim(g){
   ctx.fillRect(g.x-4,g.y-4,4,g.h+8); ctx.fillRect(g.x+g.w,g.y-4,4,g.h+8); ctx.fillRect(g.x-4,g.y-4,g.w+8,4);
 }
 
+// ── Fünfer-Block: Übergabe vor der Vorab-Eingabe ──
+function drawBatchHand(){
+  const bg=ctx.createLinearGradient(0,0,0,H);
+  bg.addColorStop(0,'#0d1626'); bg.addColorStop(1,'#070d18');
+  ctx.fillStyle=bg; ctx.fillRect(0,0,W,H);
+  const target=gs.batchPlayer, MUT='#8aa0c0', acc='#c9a227';
+  textC('FÜNFER-BLOCK', W/2, 28, MUT, 1);
+  textC(gs.singlePlayer?'DU BEREITEST VOR':'GERÄT WEITERGEBEN AN', W/2, 54, MUT, 1);
+  textC(NAMES[target], W/2, 70, '#ffd23f', 3);
+  const cx0=26, cy0=118, cw=W-52, ch=206;
+  ctx.fillStyle='rgba(255,210,63,0.10)'; rr(cx0,cy0,cw,ch,12); ctx.fill();
+  ctx.strokeStyle=acc; ctx.lineWidth=2; rr(cx0+1,cy0+1,cw-2,ch-2,11); ctx.stroke();
+  drawBootBig(W/2-38, cy0+54); drawGloveBig(W/2+40, cy0+56);
+  textC('5 SCHÜSSE', W/2, cy0+96, '#46d27a', 2);
+  textC('5 PARADEN', W/2, cy0+118, '#4ea0ff', 2);
+  textC('JETZT VORAB EINTIPPEN', W/2, cy0+142, '#cfe0f7', 1);
+  ctx.strokeStyle='rgba(255,255,255,0.10)'; ctx.lineWidth=1;
+  ctx.beginPath(); ctx.moveTo(cx0+22, cy0+160); ctx.lineTo(cx0+cw-22, cy0+160); ctx.stroke();
+  flagTeam(gs.teams[target].name, gs.teams[target], cy0+182, MUT);
+  buttons=[];
+  button('go', W/2-66, cy0+ch+30, 132, 32, 'BEREIT', '#3fcf6a', '#04210f');
+}
+
+// ── Fünfer-Block: Vorab-Eingabe der 5 Schüsse / 5 Paraden ──
+function drawBatchAim(){
+  ctx.fillStyle='#08142a'; ctx.fillRect(0,0,W,H);
+  drawStadium();
+  ctx.fillStyle='#1f7a2c'; ctx.fillRect(0,56,W,H-56);
+  for (let i=0;i<6;i++){ ctx.fillStyle=i%2?'#268a31':'#2f9e3a'; ctx.fillRect(0,250+i*26,W,26); }
+  const shooting = (gs.batchKind==='shots');
+  const acc = shooting?'#46d27a':'#4ea0ff';
+  // Header unter der Bande (gut lesbar, nicht über dem Publikum)
+  textC(NAMES[gs.batchPlayer]+' BEREITET VOR', W/2, 62, '#ffd23f', 1);
+  textC((shooting?'SCHUSS ':'PARADE ')+(gs.batchIdx+1)+' / '+REG, W/2, 78, acc, 2);
+  textC(shooting?'WOHIN SCHIESSEN?':'WOHIN SPRINGEN?', W/2, 98, '#cfe0f7', 1);
+
+  const geom = { x:18, y:114, w:W-36, h:124 };
+  drawGoalAim(geom);
+  buttons=[];
+  for (let z=0; z<NZ; z++){
+    const r=zoneRect(geom,z);
+    ctx.fillStyle='rgba(255,255,255,0.07)'; ctx.fillRect(r.x+2,r.y+2,r.w-4,r.h-4);
+    ctx.strokeStyle='rgba(255,255,255,0.35)'; ctx.lineWidth=1; ctx.strokeRect(r.x+1.5,r.y+1.5,r.w-3,r.h-3);
+    const cxp=r.x+r.w/2, cyp=r.y+r.h/2;
+    ctx.strokeStyle='rgba(255,255,255,0.25)'; ctx.lineWidth=1;
+    ctx.beginPath(); ctx.moveTo(cxp-4,cyp); ctx.lineTo(cxp+4,cyp); ctx.moveTo(cxp,cyp-4); ctx.lineTo(cxp,cyp+4); ctx.stroke();
+    buttons.push({id:'z'+z, x:r.x, y:r.y, w:r.w, h:r.h});
+  }
+  // Fortschritt: 5 Schuss-Punkte (grün) + 5 Parade-Punkte (blau)
+  const by=250;
+  for (let i=0;i<REG;i++){ ctx.fillStyle = i<(shooting?gs.batchIdx:REG)?'#46d27a':'#23362a'; ctx.beginPath(); ctx.arc(W/2-58+i*10, by, 3,0,7); ctx.fill(); }
+  for (let i=0;i<REG;i++){ ctx.fillStyle = (!shooting && i<gs.batchIdx)?'#4ea0ff':'#243246'; ctx.beginPath(); ctx.arc(W/2+10+i*10, by, 3,0,7); ctx.fill(); }
+  textC('TIPPE EINE ZONE', W/2, 264, '#bcd0ee', 1);
+  if (shooting) drawPlayer(W/2, H-8, gs.batchPlayer, gs.batchPlayer, 'ready', gs.t, 1);
+  else drawPlayer(W/2, H-8, gs.batchPlayer, gs.batchPlayer, 'ready', gs.t, 1, {keeper:true});
+}
+
 // ─── SCHUSSSZENE (entschleunigt, mit Aufbau & Anlauf) ─────────────────────────
 // Frame-Fahrplan @ ~60fps:
 //  0–78   AUFBAU (Ball wird gelegt, Spieler steht, Pause ~1s)
@@ -1451,11 +1520,16 @@ function drawScoreboard(){
   if (oTxt) textC(oTxt, W/2, 248, oCol, 2);
 
   buttons=[];
+  const batchAuto = (gs.turnMode==='batch' && !gs.suddenDeath);
   // Sekundär: Schuss noch einmal ansehen · Primär: weiter
   button('replay', W/2-66, 288, 132, 28, 'WIEDERHOLUNG', '#2c3f66', '#dce6f5');
   button('next',   W/2-66, 324, 132, 32, 'WEITER', '#3fcf6a', '#04210f');
+  if (batchAuto) textC('LÄUFT AUTOMATISCH WEITER', W/2, 360, '#6f86a8', 1);
 
   updateConfetti(); drawConfetti();
+
+  // Fünfer-Block: im Regelverlauf automatisch zum nächsten Schuss
+  if (batchAuto && gs.t>78) afterScoreboard();
 }
 function drawMark(x,y,good){
   ctx.strokeStyle=good?'#04210f':'#2a0606'; ctx.lineWidth=2;
@@ -1470,6 +1544,16 @@ function drawEnd(){
 
   const win = gs.scores[0]>gs.scores[1]?0:gs.scores[1]>gs.scores[0]?1:-1;
   if (win>=0){
+    // Grund des Spielendes klar kennzeichnen
+    let tag='', tagCol='#ff9a3a';
+    if (gs.endReason==='unbeatable'){ tag='UNEINHOLBAR'; tagCol='#ff9a3a'; }
+    else if (gs.endReason==='suddendeath'){ tag='VERLÄNGERUNG ENTSCHIEDEN'; tagCol='#ffd23f'; }
+    if (tag){
+      const tw=textWidth(tag,1)+14;
+      ctx.fillStyle='rgba(255,154,58,0.16)'; rr(W/2-tw/2,12,tw,15,7); ctx.fill();
+      ctx.strokeStyle=tagCol; ctx.lineWidth=1; rr(W/2-tw/2+0.5,12.5,tw-1,14,7); ctx.stroke();
+      textC(tag, W/2, 17, tagCol, 1);
+    }
     textC(NAMES[win], W/2, 40, '#ffd23f', 3);
     textC('GEWINNT!', W/2, 76, '#ffd23f', 3);
     drawPlayer(W*0.32, 250, win, win, 'cheer', gs.t, 1);
@@ -1498,8 +1582,42 @@ function startMatch(){
   gs.round=0; gs.shotInRound=0;
   gs.firstShooter = Math.random()<0.5 ? 0 : 1;     // Losentscheid: wer zuerst schießt
   gs.shooter = gs.firstShooter;
-  gs.suddenDeath=false; gs.winner=-1;
-  startRoundHandoff(true);
+  gs.suddenDeath=false; gs.winner=-1; gs.endReason='';
+  if (gs.turnMode==='batch') startBatchInput();     // Fünfer-Block: erst alles eintippen
+  else startRoundHandoff(true);                     // Abwechselnd: Runde für Runde
+}
+// ── Fünfer-Block: jeder tippt vorab alle 5 Schüsse und 5 Paraden ──
+function startBatchInput(){
+  gs.batchShots=[[],[]]; gs.batchSaves=[[],[]];
+  for (let p=0;p<2;p++){ if (isAI(p)){ for (let i=0;i<REG;i++){ gs.batchShots[p][i]=aiShooterZone(); gs.batchSaves[p][i]=aiKeeperZone(); } } }
+  gs.batchOrder = [gs.firstShooter, 1-gs.firstShooter].filter(p=>!isAI(p));   // nur Menschen, Erstschütze zuerst
+  gs.batchOi = 0;
+  nextBatchPlayer();
+}
+function nextBatchPlayer(){
+  if (gs.batchOi >= gs.batchOrder.length){ startBatchPlayback(); return; }
+  gs.batchPlayer = gs.batchOrder[gs.batchOi];
+  gs.batchKind = 'shots'; gs.batchIdx = 0;
+  gs.handoffTarget = gs.batchPlayer;
+  gs.state='batchhand'; gs.t=0;
+}
+function recordBatchZone(z){
+  if (gs.batchKind==='shots') gs.batchShots[gs.batchPlayer][gs.batchIdx]=z;
+  else                        gs.batchSaves[gs.batchPlayer][gs.batchIdx]=z;
+  gs.batchIdx++;
+  if (gs.batchIdx>=REG){
+    if (gs.batchKind==='shots'){ gs.batchKind='saves'; gs.batchIdx=0; }
+    else { gs.batchOi++; nextBatchPlayer(); }
+  }
+}
+function startBatchPlayback(){
+  gs.shooter=gs.firstShooter; gs.round=0; gs.shotInRound=0;
+  beginBatchKick();
+}
+function beginBatchKick(){
+  gs.shooterZone = gs.batchShots[gs.shooter][gs.round];
+  gs.keeperZone  = gs.batchSaves[1-gs.shooter][gs.round];
+  executeShot();
 }
 function startRoundHandoff(isShooterTurn){
   gs.aimPhase = isShooterTurn?'shooter':'keeper';
@@ -1603,12 +1721,14 @@ function afterScoreboard(){
   if (gs.winner>=0){ gs.state='end'; gs.t=0; spawnConfetti(70); return; }
   if (gs.shotInRound===0){
     gs.shotInRound=1; gs.shooter=1-gs.firstShooter;     // der andere ist dran
-    startRoundHandoff(true);
   } else {
     gs.shotInRound=0; gs.round++; gs.shooter=gs.firstShooter;
     if (gs.round>=REG) gs.suddenDeath=true;
-    startRoundHandoff(true);
   }
+  // Fünfer-Block: in der Regulation läuft alles automatisch aus den vorab-Eingaben;
+  // in der Verlängerung wieder normales Tippen Runde für Runde.
+  if (gs.turnMode==='batch' && !gs.suddenDeath && gs.round<REG) beginBatchKick();
+  else startRoundHandoff(true);
 }
 // Liefert den Gewinner-Index (0/1) sobald entschieden, sonst -1.
 const REG = 5;
@@ -1618,16 +1738,17 @@ function decideMatch(){
   const n0=kicksTaken(0), n1=kicksTaken(1);
   if (!gs.suddenDeath){
     const rem0=Math.max(0,REG-n0), rem1=Math.max(0,REG-n1);
-    if (s0 > s1 + rem1) return 0;          // P1 uneinholbar vorne
-    if (s1 > s0 + rem0) return 1;          // P2 uneinholbar vorne
+    const early = (n0<REG || n1<REG);
+    if (s0 > s1 + rem1){ gs.endReason = early?'unbeatable':'regular'; return 0; }   // P1 uneinholbar vorne
+    if (s1 > s0 + rem0){ gs.endReason = early?'unbeatable':'regular'; return 1; }   // P2 uneinholbar vorne
     if (n0>=REG && n1>=REG){
-      if (s0!==s1) return s0>s1?0:1;       // nach 5 Schüssen entschieden
-      gs.suddenDeath=true;                 // Gleichstand -> Verlängerung
+      if (s0!==s1){ gs.endReason='regular'; return s0>s1?0:1; }   // nach 5 Schüssen entschieden
+      gs.suddenDeath=true;                                        // Gleichstand -> Verlängerung
     }
     return -1;
   } else {
     // Verlängerung: entschieden, wenn beide gleich oft geschossen haben und es differiert
-    if (n0===n1 && n0>REG && s0!==s1) return s0>s1?0:1;
+    if (n0===n1 && n0>REG && s0!==s1){ gs.endReason='suddendeath'; return s0>s1?0:1; }
     return -1;
   }
 }
@@ -1672,6 +1793,12 @@ function onClick(e){
     case 'handoff':
       if (id==='go'){ SFX.ui(); beginAim(); }
       break;
+    case 'batchhand':
+      if (id==='go'){ SFX.ui(); gs.state='batchaim'; gs.t=0; }
+      break;
+    case 'batchaim':
+      if (id && id[0]==='z'){ const z=+id.slice(1); SFX.tick(); recordBatchZone(z); }
+      break;
     case 'aim':
       if (id && id[0]==='z' && !gs.aimLocked){
         const z=+id.slice(1); SFX.tick();
@@ -1693,6 +1820,7 @@ function onClick(e){
 }
 function startCountrySelect(){
   gs.singlePlayer = SOLO;            // Modus für das ganze Match festlegen
+  gs.turnMode = BATCH ? 'batch' : 'alt';
   gs.teams=[null,null];
   gs.chooseOrder = Math.random()<0.5?[0,1]:[1,0];
   gs.choosePhase=0;
@@ -1705,14 +1833,18 @@ canvas.addEventListener('touchstart', onClick, {passive:false});
 const overlay=document.getElementById('overlay');
 const inp1=document.getElementById('inp1'), inp2=document.getElementById('inp2');
 let overlayOpen=false;
-let tmpSolo=false;
+let tmpSolo=false, tmpBatch=false;
 const segBtns=document.querySelectorAll('#modeSeg .seg-btn');
+const flowBtns=document.querySelectorAll('#flowSeg .seg-btn');
 function updateSeg(){ segBtns.forEach(b=>b.classList.toggle('active', (b.dataset.mode==='1')===tmpSolo)); }
+function updateFlowSeg(){ flowBtns.forEach(b=>b.classList.toggle('active', (b.dataset.flow==='batch')===tmpBatch)); }
 segBtns.forEach(b=>b.addEventListener('click', ()=>{ tmpSolo = b.dataset.mode==='1'; updateSeg(); }));
+flowBtns.forEach(b=>b.addEventListener('click', ()=>{ tmpBatch = b.dataset.flow==='batch'; updateFlowSeg(); }));
 function openOverlay(){
   overlayOpen=true; overlay.classList.add('show');
   inp1.value=NAMES[0]; inp2.value=NAMES[1];
   tmpSolo=SOLO; updateSeg();
+  tmpBatch=BATCH; updateFlowSeg();
 }
 function closeOverlay(){ overlayOpen=false; overlay.classList.remove('show'); }
 function sanitize(v,def){ v=(v||'').toUpperCase().replace(/[^A-ZÄÖÜ ]/g,'').trim().slice(0,9); return v||def; }
@@ -1720,6 +1852,7 @@ document.getElementById('ovSave').addEventListener('click', ()=>{
   NAMES=[sanitize(inp1.value,'FIETE'), sanitize(inp2.value,'JONTE')];
   saveNames(NAMES[0],NAMES[1]);
   SOLO=tmpSolo; saveSolo(SOLO);
+  BATCH=tmpBatch; saveBatch(BATCH);
   closeOverlay(); SFX.ui();
 });
 document.getElementById('ovCancel').addEventListener('click', ()=>{ closeOverlay(); });
@@ -1734,6 +1867,8 @@ function loop(){
     case 'title':      drawTitle(); break;
     case 'country':    drawCountry(); break;
     case 'handoff':    drawHandoff(); break;
+    case 'batchhand':  drawBatchHand(); break;
+    case 'batchaim':   drawBatchAim(); break;
     case 'aithink':    drawAIThink(); break;
     case 'aim':        drawAim(); break;
     case 'shot':       drawShot(); break;

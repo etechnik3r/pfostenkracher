@@ -28,8 +28,9 @@ wird getauscht. Im **Einzelspieler-Modus** übernimmt eine KI den zweiten Spiele
    ins Tor und das Netz beult sich aus – oder der Torwart fängt ihn ab.
    Per **Wiederholung** lässt sich der Schuss noch einmal ansehen.
 7. Nach **5 Runden** (je Spieler 5 Schüsse) gewinnt, wer mehr Tore erzielt hat.
-   Steht es uneinholbar, endet das Spiel sofort. Bei Gleichstand geht es ins
-   **Sudden Death** (Verlängerung), bis eine Entscheidung fällt.
+   Steht es **uneinholbar**, endet das Spiel sofort (mit deutlichem Hinweis am
+   Ende, warum). Bei Gleichstand geht es ins **Sudden Death** (Verlängerung),
+   bis eine Entscheidung fällt.
 
 ## 🥅 Trefferzonen & Wahrscheinlichkeiten
 
@@ -63,10 +64,15 @@ Standardmäßig treten an:
 
 Über `EINSTELLUNGEN` auf dem Startbildschirm lassen sich
 
-- **beide Namen ändern** und
-- der **Spielmodus** umschalten (2 Spieler ↔ 1 Spieler · KI).
+- **beide Namen ändern**,
+- der **Spielmodus** umschalten (2 Spieler ↔ 1 Spieler · KI) und
+- der **Ablauf** wählen:
+  - **Abwechselnd** (Standard) – Runde für Runde: einer schießt, einer hält,
+    danach wird getauscht.
+  - **Fünfer-Block** – jeder tippt vorab seine **5 Schüsse und 5 Paraden**, dann
+    laufen alle Schüsse am Stück durch und beide schauen gemeinsam zu.
 
-Namen und Modus werden lokal im Browser gespeichert (`localStorage`).
+Namen und Einstellungen werden lokal im Browser gespeichert (`localStorage`).
 
 ## 🌍 Mannschaften
 
