@@ -1200,6 +1200,12 @@ function drawShot(){
   if (ev==='post') target = { x:(missSide<0?GOAL.x-3:GOAL.x+GOAL.w+3), y:sCenter.y };
   if (ev==='wide') target = { x:(missSide<0?GOAL.x-22:GOAL.x+GOAL.w+22), y:sCenter.y-6 };
   if (ev==='slip-shooter') target = { x:SPOT.x+(gs.slipDir||-1)*30, y:SPOT.y-18 };
+  // Tor: Einschlagpunkt auf der NETZ-Ebene (in der Tiefe = höher/eingerückt)
+  const NETDZ=22, NETDX=16;
+  const fxn=clamp((sCenter.x-GOAL.x)/GOAL.w,0,1), fyn=clamp((sCenter.y-GOAL.y)/GOAL.h,0,1);
+  const netX=(GOAL.x+NETDX)+fxn*(GOAL.w-2*NETDX);
+  const netY=(GOAL.y-NETDZ)+fyn*GOAL.h;
+  if (isGoalNet) target = { x:netX, y:netY };
 
   // ── Torwart ──
   // Bei einer PARADE bewegt er sich ZUM BALL; sonst zu seiner geratenen Ecke (sichtbar geschlagen).
@@ -1289,16 +1295,28 @@ function drawShot(){
       else if (ev==='post'){ const bp=clamp((t-T.reach)/30,0,1); ballX=lerp(target.x,target.x+(target.x<W/2?22:-22),bp); ballY=lerp(target.y,SPOT.y-8,bp)-Math.sin(bp*Math.PI)*9; }
       else if (ev==='over'){ const bp=clamp((t-T.reach)/22,0,1); ballY=lerp(target.y,GOAL.y-32,bp); ballR=lerp(2.6,1.5,bp); if (bp>=1) ballVisible=false; }
       else if (ev==='wide'){ const bp=clamp((t-T.reach)/26,0,1); ballX=lerp(target.x,target.x+missSide*34,bp); ballY=lerp(target.y,target.y+18,bp); ballR=lerp(2.6,2.1,bp); }
-      else { ballX=target.x; ballY=target.y; ballR=2.6; }                          // Tor: ruht im Netz
+      else { const ft=t-T.reach, s=clamp(ft/9,0,1); ballX=netX; ballY=netY+4*s; ballR=2.1; }   // Tor: setzt sich in die Netztasche
     }
   }
   if (ev==='slip-shooter'){ if (t<T.runEnd){ ballX=SPOT.x; ballY=SPOT.y; } ballVisible=true; }
 
-  // Netz-Beule bei Tor (hinter dem Ball)
+  // ── Tor: Netz beult sich am Einschlag aus (gedehnte Maschen) ──
+  let netMag=0;
   if (isGoalNet && t>=T.reach){
-    const np=clamp((t-T.reach)/12,0,1);
-    ctx.fillStyle='rgba(255,255,255,0.16)';
-    ctx.beginPath(); ctx.arc(sCenter.x, sCenter.y, 5+np*9, 0, 7); ctx.fill();
+    const ft=t-T.reach;
+    const grow=Math.min(1,ft/3.5), relax=Math.exp(-Math.max(0,ft-5)/16);
+    netMag=(5+12*grow)*(0.5+0.5*relax);
+    ctx.save();
+    // Tasche (Netz nach vorne gewölbt -> abgedunkelter Kern)
+    ctx.fillStyle='rgba(10,18,32,0.5)';
+    ctx.beginPath(); ctx.ellipse(netX, netY, netMag*1.5, netMag*1.3, 0,0,7); ctx.fill();
+    // radiale, gedehnte Maschen
+    ctx.strokeStyle='rgba(232,240,250,0.55)'; ctx.lineWidth=1;
+    for (let i=0;i<12;i++){ const a=i/12*6.2832;
+      ctx.beginPath(); ctx.moveTo(netX,netY); ctx.lineTo(netX+Math.cos(a)*netMag*1.5, netY+Math.sin(a)*netMag*1.25); ctx.stroke(); }
+    ctx.strokeStyle='rgba(232,240,250,0.3)';
+    ctx.beginPath(); ctx.ellipse(netX, netY, netMag*0.85, netMag*0.72, 0,0,7); ctx.stroke();
+    ctx.restore();
   }
 
   // Bodenschatten des Keepers (bleibt am Boden, schrumpft beim Sprung)
@@ -1323,6 +1341,12 @@ function drawShot(){
     }
   }
   if (ballVisible) drawBall(ballX|0, ballY|0, Math.max(1.5,ballR));
+  // Netz-Maschen VOR dem Ball -> Ball liegt sichtbar IM Netz
+  if (netMag>3){
+    ctx.strokeStyle='rgba(232,240,250,0.42)'; ctx.lineWidth=1;
+    for (let i=-1;i<=1;i++){ ctx.beginPath(); ctx.moveTo(netX+i*4, netY-netMag*0.9); ctx.lineTo(netX+i*4, netY+netMag*0.9); ctx.stroke(); }
+    for (let j=-1;j<=1;j++){ ctx.beginPath(); ctx.moveTo(netX-netMag*0.9, netY+j*4); ctx.lineTo(netX+netMag*0.9, netY+j*4); ctx.stroke(); }
+  }
   // Schütze (mit Umdreh-Stauchung), eigener Schatten
   ctx.save(); ctx.translate(shX, shY); ctx.scale(squash,1);
   drawPlayer(0, 0, gs.shooter, gs.shooter, shooterAnim, gs.t, 1, {back:shBack, noShadow:true});
