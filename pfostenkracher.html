@@ -1215,17 +1215,23 @@ function drawShot(){
   const p1 = clamp((t-launch)/(T.reach-launch),0,1), eo1 = 1-(1-p1)*(1-p1);
 
   let kMode='stand', pivX=W/2, pivY=standY, tilt=0, crouch=0, kFeetY=groundY, kStepX=W/2;
-  let kGlove={x:W/2,y:standY}, landT=1e9;
+  let kGlove={x:W/2,y:standY}, catchPt={x:W/2,y:kCenter.y}, landT=1e9;
 
   if (isCenterK){
-    // ── Mitte: aufrecht bleiben, Ausgleichsschritt + ggf. kleiner Sprung ──
-    const hop = kRow===0 ? 12 : (kRow===1 ? 4 : 0);
+    // ── Mitte: aufrecht bleiben, Ausgleichsschritt (oben ein kleiner Sprung) ──
+    const hop = (kRow===0) ? 10 : 0;
+    const feetPeak = groundY - hop;
     if (t < launch){ crouch = clamp((t-(launch-7))/7,0,1)*3; kMode='stand'; }
-    else { kMode='step';
+    else if (t <= T.reach){ kMode='step';
+      const ss = p1*p1*(3-2*p1);
       kStepX = lerp(W/2, kCenter.x, eo1);
-      kFeetY = (t<=T.reach) ? groundY - hop*Math.sin(p1*Math.PI) : groundY;   // kleiner Sprung -> Landung
+      kFeetY = groundY - hop*ss;                          // steigt bis zum Ankommen des Balls
+    } else { kMode='step';
+      const ft=t-T.reach; kStepX=kCenter.x;
+      kFeetY = Math.min(groundY, feetPeak + 0.12*ft*ft);  // landet wieder
     }
-    kGlove = { x:kStepX, y: clamp(kCenter.y, kFeetY-26, kFeetY-4) };          // Ball am Körper geblockt
+    kGlove  = { x:kStepX,    y: clamp(kCenter.y, kFeetY-30, kFeetY-6) };
+    catchPt = { x:kCenter.x, y: clamp(kCenter.y, feetPeak-30, feetPeak-6) };   // Abfangpunkt VOR dem Tor
   } else {
     // ── Außen: echter Hechtsprung (aufrechte Figur wird gekippt) ──
     const sideSign = kCenter.x < W/2 ? -1 : 1;
@@ -1246,7 +1252,8 @@ function drawShot(){
       pivY = Math.min(groundY-5, pivotEndY + 0.07*ft*ft);
       tilt = tiltFull;
     }
-    kGlove = keeperGlove(pivX, pivY, tilt, kBig);
+    kGlove  = keeperGlove(pivX, pivY, tilt, kBig);
+    catchPt = keeperGlove(pivotEndX, pivotEndY, tiltFull, kBig);   // finaler Abfangpunkt
     landT  = T.reach + Math.sqrt(Math.max(0,(groundY-5-pivotEndY)/0.07));
   }
 
@@ -1270,11 +1277,15 @@ function drawShot(){
   else {
     const fp = clamp((t-T.kick)/(T.reach-T.kick), 0, 1);
     const fv = 1-(1-fp)*(1-fp);                 // easeOut: Ball verlässt den Fuß mit Höchsttempo, rollt aus
-    ballX = lerp(SPOT.x, target.x, fv);
-    ballY = lerp(SPOT.y, target.y, fv) - Math.sin(fp*Math.PI)*5;   // nur flacher Bogen
-    ballR = lerp(5, 2.6, fv);
+    // Bei einer Parade endet der Flug am Abfangpunkt VOR dem Tor (Hände/Körper des Keepers),
+    // nicht erst im Netz -> kein "ins Tor fliegen und dann zurückspringen".
+    const flightEnd = isSave ? catchPt : target;
+    const endR = isSave ? 3.2 : 2.6;
+    ballX = lerp(SPOT.x, flightEnd.x, fv);
+    ballY = lerp(SPOT.y, flightEnd.y, fv) - Math.sin(fp*Math.PI)*5;   // nur flacher Bogen
+    ballR = lerp(5, endR, fv);
     if (t>=T.reach){
-      if (isSave){ ballX=kGlove.x; ballY=kGlove.y; ballR=3.2; }                    // in den Handschuhen, fällt mit dem Keeper
+      if (isSave){ ballX=kGlove.x; ballY=kGlove.y; ballR=3.2; }                    // bleibt an Händen/Körper, fällt mit dem Keeper
       else if (ev==='post'){ const bp=clamp((t-T.reach)/30,0,1); ballX=lerp(target.x,target.x+(target.x<W/2?22:-22),bp); ballY=lerp(target.y,SPOT.y-8,bp)-Math.sin(bp*Math.PI)*9; }
       else if (ev==='over'){ const bp=clamp((t-T.reach)/22,0,1); ballY=lerp(target.y,GOAL.y-32,bp); ballR=lerp(2.6,1.5,bp); if (bp>=1) ballVisible=false; }
       else if (ev==='wide'){ const bp=clamp((t-T.reach)/26,0,1); ballX=lerp(target.x,target.x+missSide*34,bp); ballY=lerp(target.y,target.y+18,bp); ballR=lerp(2.6,2.1,bp); }
