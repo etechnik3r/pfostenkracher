@@ -768,30 +768,49 @@ function meshQuad(A,B,C,D,nx,ny,alpha){
   }
 }
 
-// Dreidimensionales Tor: Front-Rahmen, Hinterpfosten und Netz auf Rück-, Dach- und Seitenflächen
-function drawGoal(withNet=true){
-  const g=GOAL, DZ=22, DX=16;                 // Tiefe (nach oben) und Verjüngung
-  // Front-Ecken
+// Verformbares Rückwand-Netz: zieht die weißen Maschen lokal zum Einschlag
+// (impact={x,y,R,pull}) -> die vorhandenen Linien verzerren sich, kein Overlay.
+function backNet(left, right, top, bottom, impact, nx, ny, alpha){
+  const hasImp = impact && impact.pull>0.02;
+  const R2 = impact ? impact.R*impact.R : 1;
+  function pt(u,v){
+    let x = left + (right-left)*u;
+    let y = top + (bottom-top)*v;
+    if (hasImp){
+      const dx=x-impact.x, dy=y-impact.y;
+      const f = Math.exp(-(dx*dx+dy*dy)/R2) * impact.pull;
+      x += (impact.x-x)*f;
+      y += (impact.y-y)*f;
+    }
+    return {x,y};
+  }
+  ctx.strokeStyle='rgba(245,249,254,'+alpha+')'; ctx.lineWidth=1;
+  for (let i=0;i<=nx;i++){ ctx.beginPath();
+    for (let j=0;j<=ny;j++){ const p=pt(i/nx,j/ny); j?ctx.lineTo(p.x,p.y):ctx.moveTo(p.x,p.y); } ctx.stroke(); }
+  for (let j=0;j<=ny;j++){ ctx.beginPath();
+    for (let i=0;i<=nx;i++){ const p=pt(i/nx,j/ny); i?ctx.lineTo(p.x,p.y):ctx.moveTo(p.x,p.y); } ctx.stroke(); }
+}
+
+// Dreidimensionales Tor: weißes, DURCHSICHTIGES Netz (Hintergrund scheint durch),
+// optional am Einschlag verzogen. Pfosten/Latte als Rahmen.
+function drawGoal(withNet=true, impact=null){
+  const g=GOAL, DZ=22, DX=16;
   const FTL={x:g.x,y:g.y}, FTR={x:g.x+g.w,y:g.y}, FBL={x:g.x,y:g.y+g.h}, FBR={x:g.x+g.w,y:g.y+g.h};
-  // Hinter-Ecken (höher = ferner, eingerückt)
   const BTL={x:g.x+DX,y:g.y-DZ}, BTR={x:g.x+g.w-DX,y:g.y-DZ}, BBL={x:g.x+DX,y:g.y+g.h-DZ}, BBR={x:g.x+g.w-DX,y:g.y+g.h-DZ};
 
   if (withNet){
-    // Rückwand (gefüllt + dichtes Netz) für Tiefe
-    ctx.fillStyle='rgba(16,24,40,0.5)';
-    ctx.beginPath(); ctx.moveTo(BTL.x,BTL.y); ctx.lineTo(BTR.x,BTR.y); ctx.lineTo(BBR.x,BBR.y); ctx.lineTo(BBL.x,BBL.y); ctx.closePath(); ctx.fill();
-    meshQuad(BTL,BTR,BBR,BBL, 14, 10, 0.34);
-    // Dach-Netz und Seiten-Netze (schräg -> Tiefeneindruck)
-    meshQuad(FTL,FTR,BTR,BTL, 14, 4, 0.22);   // oben
-    meshQuad(FTL,BTL,BBL,FBL, 4, 10, 0.20);   // links
-    meshQuad(FTR,BTR,BBR,FBR, 4, 10, 0.20);   // rechts
+    // durchsichtig: keine dunkle Füllung – nur weiße Maschen über dem Hintergrund
+    meshQuad(FTL,FTR,BTR,BTL, 15, 4, 0.16);   // Dach-Netz
+    meshQuad(FTL,BTL,BBL,FBL, 4, 11, 0.14);   // linkes Seitennetz
+    meshQuad(FTR,BTR,BBR,FBR, 4, 11, 0.14);   // rechtes Seitennetz
+    backNet(BTL.x, BTR.x, BTL.y, BBL.y, impact, 15, 11, 0.32);   // Rückwand (verformbar)
   }
   // Hinterpfosten + hintere Latte (dünn, grau)
   ctx.strokeStyle='#9aa6b6'; ctx.lineWidth=2; ctx.lineCap='round';
   ctx.beginPath(); ctx.moveTo(BTL.x,BTL.y); ctx.lineTo(BBL.x,BBL.y);
   ctx.moveTo(BTR.x,BTR.y); ctx.lineTo(BBR.x,BBR.y);
   ctx.moveTo(BTL.x,BTL.y); ctx.lineTo(BTR.x,BTR.y); ctx.stroke();
-  // Tiefen-Streben oben (verbinden Front-Latte mit Hinter-Latte)
+  // Tiefen-Streben oben (Front-Latte -> Hinter-Latte)
   ctx.strokeStyle='#c3ccd8'; ctx.lineWidth=2;
   ctx.beginPath(); ctx.moveTo(FTL.x,FTL.y); ctx.lineTo(BTL.x,BTL.y);
   ctx.moveTo(FTR.x,FTR.y); ctx.lineTo(BTR.x,BTR.y); ctx.stroke();
@@ -1170,13 +1189,12 @@ function drawGoalAim(g){
 //  124–132 SCHUSS (Kontakt @128)
 //  128–166 BALLFLUG + Hechten des Keepers
 //  166–    ERGEBNIS (Jubel/Trauer)
-const T = { setup:84, runEnd:130, kick:134, reach:176, result:262 };
+const T = { setup:58, runEnd:104, kick:108, reach:150, result:226 };
 let kickPlayed=false, sfxPlayed=false, whistleDone=false;
 
-// Zeitlupe rund um Schuss & Parade, damit man das Halten/Tor klar sieht
+// Sanfte, durchgehende Zeitlupe für Flug & Einschlag/Parade (kein Standbild -> flüssig)
 function shotTimeInc(t){
-  if (t>=T.reach-3 && t<=T.reach+12) return 0.14;   // fast Standbild im Moment der Entscheidung
-  if (t>=T.kick-4  && t<=T.reach+40) return 0.4;    // Zeitlupe für Flug & Hechtsprung
+  if (t>=T.kick-2 && t<=T.reach+30) return 0.5;
   return 1;
 }
 
@@ -1185,13 +1203,26 @@ function drawShot(){
   if (gs.shake>0){ sx=(Math.random()-0.5)*gs.shake*2|0; sy=(Math.random()-0.5)*gs.shake*2|0; gs.shake-=0.5; }
   ctx.save(); ctx.translate(sx,sy);
 
-  drawStadium(); drawPitch(); drawGoal(true);
-
   const t = gs.shotT;
   const ev = gs.shotResult.event;
   const isSave = (ev==='saved');
   const isGoalNet = gs.shotResult.goal;             // landet im Netz
   const sCenter = zoneCenter(GOAL, gs.shooterZone);
+
+  // Netz-Einschlagpunkt (auf der Netz-Ebene, in der Tiefe = höher/eingerückt)
+  const NETDZ=22, NETDX=16;
+  const fxn=clamp((sCenter.x-GOAL.x)/GOAL.w,0,1), fyn=clamp((sCenter.y-GOAL.y)/GOAL.h,0,1);
+  const netX=(GOAL.x+NETDX)+fxn*(GOAL.w-2*NETDX);
+  const netY=(GOAL.y-NETDZ)+fyn*GOAL.h;
+  // Verformung des Netzes am Einschlag, die schnell aufgeht und zurückfedert
+  let netImpact=null;
+  if (isGoalNet && t>=T.reach){
+    const ft=t-T.reach;
+    const str = Math.exp(-ft/9);                    // 1 -> 0 (Netz federt zurück)
+    netImpact = { x:netX, y:netY, R:24, pull:0.7*str };
+  }
+
+  drawStadium(); drawPitch(); drawGoal(true, netImpact);
 
   // Ziel des Balls
   const missSide = (gs.shotResult.side!==undefined) ? gs.shotResult.side : (gs.shooterZone%ZC<ZMID ? -1 : 1);
@@ -1200,12 +1231,7 @@ function drawShot(){
   if (ev==='post') target = { x:(missSide<0?GOAL.x-3:GOAL.x+GOAL.w+3), y:sCenter.y };
   if (ev==='wide') target = { x:(missSide<0?GOAL.x-22:GOAL.x+GOAL.w+22), y:sCenter.y-6 };
   if (ev==='slip-shooter') target = { x:SPOT.x+(gs.slipDir||-1)*30, y:SPOT.y-18 };
-  // Tor: Einschlagpunkt auf der NETZ-Ebene (in der Tiefe = höher/eingerückt)
-  const NETDZ=22, NETDX=16;
-  const fxn=clamp((sCenter.x-GOAL.x)/GOAL.w,0,1), fyn=clamp((sCenter.y-GOAL.y)/GOAL.h,0,1);
-  const netX=(GOAL.x+NETDX)+fxn*(GOAL.w-2*NETDX);
-  const netY=(GOAL.y-NETDZ)+fyn*GOAL.h;
-  if (isGoalNet) target = { x:netX, y:netY };
+  if (isGoalNet) target = { x:netX, y:netY };       // Tor: Ball fliegt zum Netz-Einschlagpunkt
 
   // ── Torwart ──
   // Bei einer PARADE bewegt er sich ZUM BALL; sonst zu seiner geratenen Ecke (sichtbar geschlagen).
@@ -1282,42 +1308,29 @@ function drawShot(){
   if (t < T.kick){ ballX=SPOT.x; ballY=SPOT.y; ballR=5; }
   else {
     const fp = clamp((t-T.kick)/(T.reach-T.kick), 0, 1);
-    const fv = 1-(1-fp)*(1-fp);                 // easeOut: Ball verlässt den Fuß mit Höchsttempo, rollt aus
-    // Bei einer Parade endet der Flug am Abfangpunkt VOR dem Tor (Hände/Körper des Keepers),
-    // nicht erst im Netz -> kein "ins Tor fliegen und dann zurückspringen".
+    const fv = fp;                              // konstant hohes Tempo (verlässt den Fuß schnell, trifft schnell auf)
+    // Bei einer Parade endet der Flug am Abfangpunkt VOR dem Tor (Hände/Körper),
+    // nicht erst im Netz -> kein "ins Tor fliegen und zurückspringen".
     const flightEnd = isSave ? catchPt : target;
-    const endR = isSave ? 3.2 : 2.6;
+    const endR = isSave ? 3.2 : (isGoalNet ? 2.1 : 2.4);
     ballX = lerp(SPOT.x, flightEnd.x, fv);
-    ballY = lerp(SPOT.y, flightEnd.y, fv) - Math.sin(fp*Math.PI)*5;   // nur flacher Bogen
+    ballY = lerp(SPOT.y, flightEnd.y, fv) - Math.sin(fp*Math.PI)*4;   // flacher Bogen
     ballR = lerp(5, endR, fv);
     if (t>=T.reach){
       if (isSave){ ballX=kGlove.x; ballY=kGlove.y; ballR=3.2; }                    // bleibt an Händen/Körper, fällt mit dem Keeper
       else if (ev==='post'){ const bp=clamp((t-T.reach)/30,0,1); ballX=lerp(target.x,target.x+(target.x<W/2?22:-22),bp); ballY=lerp(target.y,SPOT.y-8,bp)-Math.sin(bp*Math.PI)*9; }
       else if (ev==='over'){ const bp=clamp((t-T.reach)/22,0,1); ballY=lerp(target.y,GOAL.y-32,bp); ballR=lerp(2.6,1.5,bp); if (bp>=1) ballVisible=false; }
       else if (ev==='wide'){ const bp=clamp((t-T.reach)/26,0,1); ballX=lerp(target.x,target.x+missSide*34,bp); ballY=lerp(target.y,target.y+18,bp); ballR=lerp(2.6,2.1,bp); }
-      else { const ft=t-T.reach, s=clamp(ft/9,0,1); ballX=netX; ballY=netY+4*s; ballR=2.1; }   // Tor: setzt sich in die Netztasche
+      else {                                                                       // TOR: schlägt ins Netz und fällt zu Boden ins Tor
+        const ft=t-T.reach;
+        const floorY = GOAL.y+GOAL.h-NETDZ-3;                                      // Innenboden hinten im Netz
+        ballX = netX;
+        ballY = Math.min(floorY, netY + 0.14*ft*ft);                              // Schwerkraft
+        ballR = 2.2;
+      }
     }
   }
   if (ev==='slip-shooter'){ if (t<T.runEnd){ ballX=SPOT.x; ballY=SPOT.y; } ballVisible=true; }
-
-  // ── Tor: Netz beult sich am Einschlag aus (gedehnte Maschen) ──
-  let netMag=0;
-  if (isGoalNet && t>=T.reach){
-    const ft=t-T.reach;
-    const grow=Math.min(1,ft/3.5), relax=Math.exp(-Math.max(0,ft-5)/16);
-    netMag=(5+12*grow)*(0.5+0.5*relax);
-    ctx.save();
-    // Tasche (Netz nach vorne gewölbt -> abgedunkelter Kern)
-    ctx.fillStyle='rgba(10,18,32,0.5)';
-    ctx.beginPath(); ctx.ellipse(netX, netY, netMag*1.5, netMag*1.3, 0,0,7); ctx.fill();
-    // radiale, gedehnte Maschen
-    ctx.strokeStyle='rgba(232,240,250,0.55)'; ctx.lineWidth=1;
-    for (let i=0;i<12;i++){ const a=i/12*6.2832;
-      ctx.beginPath(); ctx.moveTo(netX,netY); ctx.lineTo(netX+Math.cos(a)*netMag*1.5, netY+Math.sin(a)*netMag*1.25); ctx.stroke(); }
-    ctx.strokeStyle='rgba(232,240,250,0.3)';
-    ctx.beginPath(); ctx.ellipse(netX, netY, netMag*0.85, netMag*0.72, 0,0,7); ctx.stroke();
-    ctx.restore();
-  }
 
   // Bodenschatten des Keepers (bleibt am Boden, schrumpft beim Sprung)
   if (kMode==='dive'){
@@ -1341,12 +1354,6 @@ function drawShot(){
     }
   }
   if (ballVisible) drawBall(ballX|0, ballY|0, Math.max(1.5,ballR));
-  // Netz-Maschen VOR dem Ball -> Ball liegt sichtbar IM Netz
-  if (netMag>3){
-    ctx.strokeStyle='rgba(232,240,250,0.42)'; ctx.lineWidth=1;
-    for (let i=-1;i<=1;i++){ ctx.beginPath(); ctx.moveTo(netX+i*4, netY-netMag*0.9); ctx.lineTo(netX+i*4, netY+netMag*0.9); ctx.stroke(); }
-    for (let j=-1;j<=1;j++){ ctx.beginPath(); ctx.moveTo(netX-netMag*0.9, netY+j*4); ctx.lineTo(netX+netMag*0.9, netY+j*4); ctx.stroke(); }
-  }
   // Schütze (mit Umdreh-Stauchung), eigener Schatten
   ctx.save(); ctx.translate(shX, shY); ctx.scale(squash,1);
   drawPlayer(0, 0, gs.shooter, gs.shooter, shooterAnim, gs.t, 1, {back:shBack, noShadow:true});
@@ -1372,8 +1379,8 @@ function drawShot(){
     else SFX.save();
   }
 
-  // Ergebnis-Text (erst nach der sichtbaren Aktion)
-  if (t>T.reach+14){
+  // Ergebnis-Text (kurz nach dem Einschlag/der Parade)
+  if (t>T.reach+6){
     let txt='', col='#fff';
     if (ev==='goal'||ev==='rebound'){ txt='TOR!'; col='#ffd23f'; }
     else if (ev==='keeper-slip'){ txt='PATZER – TOR!'; col='#ffd23f'; }
