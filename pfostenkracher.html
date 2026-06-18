@@ -647,16 +647,19 @@ function drawKeeperDive(cx, cy, pIdx, tilt, phase){
   px(-tw/2, th/2-3, tw, 3, shirtSh);
   px(-tw/2, -2, tw, 1, '#0c5a26'); px(-tw/2, 1, tw, 1, '#0c5a26');   // Trikot-Streifen
 
-  // ── Arme: vom Schulteransatz bis zu den Handschuhen, Reichweite wächst ──
-  const gloveY = -lerp(th/2+6, reach, phase);      // Handschuh-Höhe (über Kopf, zum Ball)
-  const elbowBend = lerp(3, 0, phase);             // anfangs angewinkelt
+  // ── Arme: breiter um den Kopf herum geführt (kein Haut-Haar-Verwechseln) ──
+  const gloveY = -lerp(th/2+6, reach, phase);
+  const elbowBend = lerp(3, 0, phase);
+  const armSpread = lerp(4, 6, phase);
+  const lMidX = -armSpread - elbowBend;
+  const rMidX =  armSpread + elbowBend;
   const armMidY = (-(th/2) + gloveY)/2;
-  // linker Arm (Oberarm Trikot, Unterarm Haut)
-  pxLimb(-tw/2+1, -th/2+2, -2-elbowBend, armMidY, 4, shirt);
-  pxLimb(-2-elbowBend, armMidY, -2, gloveY+2, 4, skin);
-  // rechter Arm
-  pxLimb(tw/2-3, -th/2+2, 1+elbowBend, armMidY, 4, shirt);
-  pxLimb(1+elbowBend, armMidY, 1, gloveY+2, 4, skin);
+  // Oberarme (Ärmel)
+  pxLimb(-tw/2+1, -th/2+2, lMidX, armMidY, 4, shirt);
+  pxLimb(tw/2-3,  -th/2+2, rMidX, armMidY, 4, shirt);
+  // Unterarme im Trikot (Ärmel bis Handgelenk – grün statt Hautfarbe)
+  pxLimb(lMidX, armMidY, -3, gloveY+2, 3, shirt);
+  pxLimb(rMidX, armMidY,  2, gloveY+2, 3, shirt);
   // Handschuhe nebeneinander an der Spitze
   px(-3, gloveY-1, 4, 5, glove); px(-3, gloveY-1, 4, 2, '#fff0b0');
   px(1,  gloveY-1, 4, 5, glove); px(1,  gloveY-1, 4, 2, '#fff0b0');
