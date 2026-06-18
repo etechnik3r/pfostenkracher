@@ -255,17 +255,7 @@ const SFX = {
     whistleBlast(t, 0.16); whistleBlast(t+0.22, 0.28);
   },
   tick() { playTone(820,0.05,'square',0.14); },
-  crowd() {
-    try {
-      const a=getAudio(), buf=a.createBuffer(1,a.sampleRate*2,a.sampleRate);
-      const d=buf.getChannelData(0);
-      for (let i=0;i<d.length;i++) d[i]=(Math.random()*2-1)*(0.6+0.4*Math.sin(i/900));
-      const src=a.createBufferSource(), g=a.createGain(), filt=a.createBiquadFilter();
-      src.buffer=buf; src.loop=true; filt.type='lowpass'; filt.frequency.value=480;
-      g.gain.value=0.05;
-      src.connect(filt); filt.connect(g); g.connect(a.destination); src.start();
-    } catch(e){}
-  }
+  crowd() {}
 };
 let crowdStarted = false;
 
