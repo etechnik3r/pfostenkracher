@@ -1554,6 +1554,28 @@ function drawMark(x,y,good){
   else { ctx.beginPath(); ctx.moveTo(x+3,y+3); ctx.lineTo(x+10,y+10); ctx.moveTo(x+10,y+3); ctx.lineTo(x+3,y+10); ctx.stroke(); }
 }
 
+function drawMedal(cx, cy, r){
+  ctx.save();
+  // Band
+  ctx.fillStyle='#c8102e'; ctx.fillRect(cx-6, cy-r-16, 5, 18);
+  ctx.fillStyle='#1d3a8a'; ctx.fillRect(cx+1, cy-r-16, 5, 18);
+  // Goldener Kreis
+  const mg=ctx.createRadialGradient(cx-r*0.25, cy-r*0.25, r*0.1, cx, cy, r);
+  mg.addColorStop(0,'#fff5b0'); mg.addColorStop(0.5,'#f4d03f'); mg.addColorStop(1,'#b8860b');
+  ctx.fillStyle=mg; ctx.beginPath(); ctx.arc(cx, cy, r, 0, Math.PI*2); ctx.fill();
+  ctx.strokeStyle='#8a6508'; ctx.lineWidth=1; ctx.beginPath(); ctx.arc(cx, cy, r, 0, Math.PI*2); ctx.stroke();
+  // Stern in der Mitte
+  ctx.fillStyle='#8a6508';
+  const sr=r*0.45;
+  ctx.beginPath();
+  for (let i=0;i<5;i++){
+    const a=Math.PI*2*i/5-Math.PI/2, a2=a+Math.PI/5;
+    ctx.lineTo(cx+Math.cos(a)*sr, cy+Math.sin(a)*sr);
+    ctx.lineTo(cx+Math.cos(a2)*sr*0.4, cy+Math.sin(a2)*sr*0.4);
+  }
+  ctx.closePath(); ctx.fill();
+  ctx.restore();
+}
 function drawEnd(){
   ctx.fillStyle='#060a18'; ctx.fillRect(0,0,W,H);
   drawStadium(); drawPitch();
@@ -1561,7 +1583,6 @@ function drawEnd(){
 
   const win = gs.scores[0]>gs.scores[1]?0:gs.scores[1]>gs.scores[0]?1:-1;
   if (win>=0){
-    // Grund des Spielendes klar kennzeichnen
     let tag='', tagCol='#ff9a3a';
     if (gs.endReason==='unbeatable'){ tag='UNEINHOLBAR'; tagCol='#ff9a3a'; }
     else if (gs.endReason==='suddendeath'){ tag='VERLÄNGERUNG ENTSCHIEDEN'; tagCol='#ffd23f'; }
@@ -1573,19 +1594,42 @@ function drawEnd(){
     }
     textC(NAMES[win], W/2, 40, '#ffd23f', 3);
     textC('GEWINNT!', W/2, 76, '#ffd23f', 3);
-    drawPlayer(W*0.32, 250, win, win, 'cheer', gs.t, 1);
-    drawPlayer(W*0.68, 252, 1-win, 1-win, 'sad', gs.t, -1, {keeper:true});
-    textC(gs.teams[win].name, W/2, 110, '#cfe0f7', 1);
+    textC(gs.teams[win].name, W/2, 98, '#cfe0f7', 1);
+
+    // Medaille neben dem Score
+    drawMedal(W/2+50, 126, 10);
   } else {
     textC('UNENTSCHIEDEN', W/2, 56, '#ffb0b0', 2);
-    drawPlayer(W*0.32, 250, 0, 0, 'idle', gs.t, 1);
-    drawPlayer(W*0.68, 250, 1, 1, 'idle', gs.t, -1);
   }
-  textC(gs.scores[0]+' : '+gs.scores[1], W/2, 130, '#fff', 4);
+  textC(gs.scores[0]+' : '+gs.scores[1], W/2, 120, '#fff', 4);
+
+  // Trefferkästchen (rot/grün) mit identischer Logik wie im Scoreboard
+  const slots = Math.max(REG, gs.shots[0].length, gs.shots[1].length);
+  const sp = slots>6 ? 11 : 16, bs = slots>6 ? 9 : 13;
+  for (let p=0;p<2;p++){
+    const baseX = p===0 ? 14 : W/2+10;
+    textC(NAMES[p], baseX + (slots*sp)/2, 152, p===0?'#ffe08a':'#a9d0ff', 1);
+    for (let i=0;i<slots;i++){
+      const x=baseX+i*sp, y=166;
+      const g = gs.shots[p][i];
+      if (g===undefined){ ctx.strokeStyle='#33425e'; ctx.lineWidth=1; rr(x+0.5,y+0.5,bs-1,bs-1,2); ctx.stroke(); }
+      else { ctx.fillStyle=g?'#2fbf4a':'#cf3a3a'; rr(x,y,bs,bs,2); ctx.fill(); if(bs>=13) drawMark(x,y,g); }
+    }
+  }
+
+  // Spieler-Figuren: Gewinner jubelt animiert, Verlierer traurig
+  if (win>=0){
+    const cheerJump = Math.abs(Math.sin(gs.t*0.14))*6;
+    drawPlayer(W*0.32, 228-cheerJump, win, win, 'cheer', gs.t, (gs.t%40<20)?1:-1);
+    drawPlayer(W*0.68, 232, 1-win, 1-win, 'sad', gs.t, -1, {keeper:true});
+  } else {
+    drawPlayer(W*0.32, 230, 0, 0, 'idle', gs.t, 1);
+    drawPlayer(W*0.68, 230, 1, 1, 'idle', gs.t, -1);
+  }
 
   buttons=[];
-  button('again', W/2-66, 320, 132, 32, 'NOCHMAL', '#3fcf6a', '#04210f');
-  button('menu',  W/2-66, 358, 132, 28, 'HAUPTMENÜ', '#4b9bff', '#04132a');
+  button('again', W/2-66, 300, 132, 32, 'NOCHMAL', '#3fcf6a', '#04210f');
+  button('menu',  W/2-66, 340, 132, 28, 'HAUPTMENÜ', '#4b9bff', '#04132a');
 
   updateConfetti(); drawConfetti();
   if (gs.t%80===0) spawnConfetti(20);
@@ -1731,7 +1775,8 @@ function advanceAfterShot(){
   const isGoal = gs.shotResult.goal;
   gs.shots[gs.shooter][gs.round] = isGoal;
   if (isGoal) gs.scores[gs.shooter]++;
-  gs.winner = decideMatch();        // nach JEDEM Schuss prüfen (uneinholbar = sofort vorbei)
+  gs.winner = decideMatch();
+  if (gs.winner>=0){ gs.state='end'; gs.t=0; spawnConfetti(70); SFX.whistle(); return; }
   gs.state='scoreboard'; gs.t=0;
 }
 function afterScoreboard(){
