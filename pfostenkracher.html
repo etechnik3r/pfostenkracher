@@ -255,6 +255,11 @@ const SFX = {
     whistleBlast(t, 0.16); whistleBlast(t+0.22, 0.28);
   },
   tick() { playTone(820,0.05,'square',0.14); },
+  coin() {
+    const delays=[0,120,260,420,600,800,1020,1260,1520,1800];
+    delays.forEach((d,i)=>setTimeout(()=>playTone(1100+((i%2)*250),0.04,'square',0.12-i*0.006),d));
+    setTimeout(()=>{ playTone(1600,0.18,'sine',0.28); playTone(2200,0.12,'sine',0.14); },2000);
+  },
   crowd() {}
 };
 let crowdStarted = false;
@@ -997,21 +1002,74 @@ function drawTitle(){
   ctx.restore();
   textC('PIXEL-ELFMETERSCHIESSEN', W/2, 116+by, '#cfe0f7', 1);
 
-  // Modus-Anzeige
-  const mode = SOLO ? '1 SPIELER · GEGEN KI' : '2 SPIELER · LOKAL';
+  // Spieler-Anzeige
+  textC(NAMES[0]+'  VS  '+(SOLO?'KI':NAMES[1]), W/2, 240, '#7f93b4', 1);
+
+  // Aktuelle Einstellung (nah am Einstellungen-Button)
+  textC('AKTUELLE EINSTELLUNG', W/2, 260, '#5a6d8c', 1);
+  const mode = (SOLO ? '1 SPIELER' : '2 SPIELER') + ' · ' + (BATCH ? 'FÜNFER-BLOCK' : 'ABWECHSELND');
   const mw=textWidth(mode,1)+16;
-  ctx.fillStyle='rgba(255,255,255,0.07)'; rr(W/2-mw/2,262,mw,14,7); ctx.fill();
-  textC(mode, W/2, 266, '#bcd0ee', 1);
+  ctx.fillStyle='rgba(255,255,255,0.07)'; rr(W/2-mw/2,268,mw,14,7); ctx.fill();
+  textC(mode, W/2, 272, '#bcd0ee', 1);
 
   // Buttons
   buttons=[];
-  const pulse=0.5+0.5*Math.sin(gs.t*0.1);
-  ctx.fillStyle='rgba(63,207,106,'+(0.10+0.18*pulse).toFixed(3)+')'; rr(W/2-78,288,156,46,13); ctx.fill();
-  button('start',    W/2-70, 296, 140, 34, 'SPIELEN', '#3fcf6a', '#04210f');
-  button('settings', W/2-70, 340, 140, 28, 'EINSTELLUNGEN', '#36507f', '#dce8f7');
+  button('settings', W/2-70, 292, 140, 26, 'EINSTELLUNGEN', '#36507f', '#dce8f7');
 
-  textC(NAMES[0]+'  VS  '+(SOLO?'KI':NAMES[1]), W/2, H-24, '#7f93b4', 1);
+  const pulse=0.5+0.5*Math.sin(gs.t*0.1);
+  ctx.fillStyle='rgba(63,207,106,'+(0.10+0.18*pulse).toFixed(3)+')'; rr(W/2-78,326,156,46,13); ctx.fill();
+  button('start',    W/2-70, 334, 140, 34, 'SPIELEN', '#3fcf6a', '#04210f');
+
   textC('V2.1', W/2, H-13, '#465875', 1);
+}
+
+function drawCoinToss(){
+  const bg=ctx.createLinearGradient(0,0,0,H);
+  bg.addColorStop(0,'#0d1626'); bg.addColorStop(1,'#070d18');
+  ctx.fillStyle=bg; ctx.fillRect(0,0,W,H);
+
+  const winner=gs.chooseOrder[0];
+  const t=gs.t;
+  const SPIN=120, HOLD=60;
+  const cx=W/2, baseY=155, coinR=16;
+
+  textC('MÜNZWURF', W/2, 40, '#8aa0c0', 2);
+  buttons=[];
+
+  if(t<=SPIN){
+    const p=t/SPIN;
+    const eased=1-(1-p)*(1-p);
+    const angle=eased*8*Math.PI*2;
+    const scaleX=Math.cos(angle);
+    const coinW=Math.max(3,Math.abs(scaleX)*coinR*2);
+    const bounce=(1-p)*28*Math.abs(Math.sin(t*0.12));
+    const cy=baseY-bounce;
+
+    const glow=ctx.createRadialGradient(cx,cy,2,cx,cy,34);
+    glow.addColorStop(0,'rgba(255,210,63,0.22)'); glow.addColorStop(1,'rgba(255,210,63,0)');
+    ctx.fillStyle=glow; ctx.beginPath(); ctx.arc(cx,cy,34,0,7); ctx.fill();
+
+    ctx.fillStyle=scaleX>0?'#ffd23f':'#c9a227';
+    rr(cx-coinW/2,cy-coinR,coinW,coinR*2,Math.min(coinW/2,coinR)); ctx.fill();
+    if(coinW>10){ ctx.fillStyle='rgba(255,255,255,0.22)'; rr(cx-coinW/4,cy-coinR+4,coinW/3,coinR/2,2); ctx.fill(); }
+
+    const dots='.'.repeat(((t/10)|0)%4);
+    textC(dots, W/2, baseY+50, '#5a6d8c', 2);
+  } else {
+    const revT=t-SPIN;
+
+    if(revT<12){ const flash=1-revT/12; ctx.fillStyle='rgba(255,210,63,'+(0.3*flash).toFixed(3)+')'; ctx.beginPath(); ctx.arc(cx,baseY,30+revT*3,0,7); ctx.fill(); }
+
+    ctx.fillStyle='#ffd23f'; rr(cx-coinR,baseY-coinR,coinR*2,coinR*2,coinR); ctx.fill();
+    ctx.fillStyle='rgba(255,255,255,0.18)'; rr(cx-6,baseY-8,8,6,2); ctx.fill();
+
+    const alpha=Math.min(1,revT/15);
+    const col='rgba(255,210,63,'+alpha.toFixed(2)+')';
+    textC(NAMES[winner], W/2, baseY+48, col, 3);
+    textC('WÄHLT ZUERST!', W/2, baseY+78, 'rgba(207,224,247,'+alpha.toFixed(2)+')', 2);
+  }
+
+  if(t>=SPIN+HOLD){ gs.state='country'; gs.t=0; }
 }
 
 function drawCountry(){
@@ -1034,16 +1092,15 @@ function drawCountry(){
 
   // farbcodierter Hinweis-Balken: wer ist dran?
   ctx.fillStyle = aiChooses ? 'rgba(255,150,80,0.15)' : (pl===0?'rgba(255,210,63,0.15)':'rgba(75,155,255,0.15)');
-  rr(16,58,W-32,30,6); ctx.fill();
-  ctx.strokeStyle=plCol; ctx.lineWidth=1; rr(16.5,58.5,W-33,29,6); ctx.stroke();
-  textC((aiChooses?NAMES[1]+' (KI) WÄHLT':NAMES[pl]+' WÄHLT'), W/2, 64, plCol, 2);
+  rr(16,56,W-32,46,6); ctx.fill();
+  ctx.strokeStyle=plCol; ctx.lineWidth=1; rr(16.5,56.5,W-33,45,6); ctx.stroke();
   if (aiChooses){
+    textC(NAMES[1]+' (KI) WÄHLT', W/2, 62, plCol, 2);
     const dots='.'.repeat(((gs.t/12)|0)%4);
     textC('DER GEGNER ÜBERLEGT'+dots, W/2, 84, '#9fb6d6', 1);
   } else {
-    textC('SPIELER '+(pl+1)+'  ·  '+(gs.choosePhase===0?'LOSENTSCHEID: ZUERST':'JETZT DU'), W/2, 80, '#9fb6d6', 1);
-    if (gs.choosePhase===1) textC(NAMES[gs.chooseOrder[0]]+' HAT '+gs.teams[gs.chooseOrder[0]].name+' GEWÄHLT', W/2, 100, '#7f93b4', 1);
-    else textC('WÄHLE DEINE MANNSCHAFT', W/2, 100, '#7f93b4', 1);
+    textC(NAMES[pl]+', WÄHLE', W/2, 62, plCol, 2);
+    textC('DEINE MANNSCHAFT', W/2, 84, '#cfe0f7', 2);
   }
 
   // Flaggen-Raster 3 Spalten (Antippen nur, wenn ein Mensch wählt)
@@ -1144,9 +1201,9 @@ function drawHandoff(){
   const accentDim = isSh ? 'rgba(70,210,122,0.14)' : 'rgba(78,160,255,0.14)';
   const MUT = '#8aa0c0';
 
-  // Runden-Anzeige (dezent oben)
+  // Runden-Anzeige (prominent oben)
   const roundLabel = gs.suddenDeath ? 'VERLÄNGERUNG' : 'RUNDE '+(gs.round+1)+' / '+REG;
-  textC(roundLabel, W/2, 28, MUT, 1);
+  textC(roundLabel, W/2, 26, MUT, 2);
 
   // Kopf: Aufforderung + Name (klare, abgestufte Hierarchie)
   textC(gs.singlePlayer ? 'DU BIST DRAN' : 'GERÄT WEITERGEBEN AN', W/2, 54, MUT, 1);
@@ -1169,11 +1226,8 @@ function drawHandoff(){
   ctx.beginPath(); ctx.moveTo(cx0+22, cy0+160); ctx.lineTo(cx0+cw-22, cy0+160); ctx.stroke();
   flagTeam(gs.teams[target].name, gs.teams[target], cy0+180, MUT);
 
-  // Erstschuss-Hinweis (dezent unter der Karte)
-  if (gs.firstKick) textC('LOSENTSCHEID · '+NAMES[gs.firstShooter]+' BEGINNT', W/2, cy0+ch+16, accent, 1);
-
   buttons=[];
-  button('go', W/2-66, cy0+ch+30, 132, 32, 'BEREIT', accent, '#04210f');
+  button('go', W/2-66, cy0+ch+16, 132, 32, 'BEREIT', accent, '#04210f');
 }
 
 function drawAim(){
@@ -1693,7 +1747,7 @@ function drawEnd(){
 function startMatch(){
   gs.scores=[0,0]; gs.shots=[[],[]];
   gs.round=0; gs.shotInRound=0;
-  gs.firstShooter = Math.random()<0.5 ? 0 : 1;     // Losentscheid: wer zuerst schießt
+  gs.firstShooter = gs.chooseOrder[0];     // Münzwurf-Gewinner schießt zuerst
   gs.shooter = gs.firstShooter;
   gs.suddenDeath=false; gs.winner=-1; gs.endReason='';
   if (gs.turnMode==='batch') startBatchInput();     // Fünfer-Block: erst alles eintippen
@@ -1737,8 +1791,6 @@ function startRoundHandoff(isShooterTurn){
   gs.handoffIsShooter = isShooterTurn;
   const actor = isShooterTurn ? gs.shooter : (1-gs.shooter);
   gs.handoffTarget = actor;
-  // ist dies der allererste Schuss des Spiels? (für deutlichen Hinweis)
-  gs.firstKick = isShooterTurn && gs.round===0 && gs.shotInRound===0;
   if (isAI(actor)){ gs.aiIsShooter = isShooterTurn; gs.state='aithink'; gs.t=0; }
   else { gs.state='handoff'; gs.t=0; }
 }
@@ -1939,7 +1991,8 @@ function startCountrySelect(){
   gs.teams=[null,null];
   gs.chooseOrder = Math.random()<0.5?[0,1]:[1,0];
   gs.choosePhase=0;
-  gs.state='country'; gs.t=0;
+  gs.state='cointoss'; gs.t=0;
+  SFX.coin();
 }
 canvas.addEventListener('click', onClick);
 canvas.addEventListener('touchstart', onClick, {passive:false});
@@ -1980,6 +2033,7 @@ function loop(){
   ctx.clearRect(0,0,W,H);
   switch(gs.state){
     case 'title':      drawTitle(); break;
+    case 'cointoss':   drawCoinToss(); break;
     case 'country':    drawCountry(); break;
     case 'handoff':    drawHandoff(); break;
     case 'batchhand':  drawBatchHand(); break;
