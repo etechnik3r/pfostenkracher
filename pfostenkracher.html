@@ -434,6 +434,12 @@ newSession();
 // ════════════════════════════════════════════════════════════════════════════
 // playerIdx: 0 = Fiete (blond, klein) · 1 = Jonte (braune lange Haare, groß)
 function px(x,y,w,h,col){ ctx.fillStyle=col; ctx.fillRect(Math.round(x),Math.round(y),w,h); }
+// dicker "Pixel-Strich" zwischen zwei Punkten – für schräge Arme/Beine
+function pxLimb(x0,y0,x1,y1,w,col){
+  const dx=x1-x0, dy=y1-y0, steps=Math.max(Math.abs(dx),Math.abs(dy),1);
+  ctx.fillStyle=col;
+  for(let i=0;i<=steps;i++){ ctx.fillRect(Math.round(x0+dx*i/steps), Math.round(y0+dy*i/steps), w, w); }
+}
 
 function drawPlayer(cx, feetY, playerIdx, teamIdx, anim, frame, facing=1, opts={}) {
   const team = gs.teams[teamIdx] || TEAMS[0];
@@ -531,7 +537,18 @@ function drawPlayer(cx, feetY, playerIdx, teamIdx, anim, frame, facing=1, opts={
 
   // Arme
   const armY = ty+1;
-  if (anim==='cheer') {
+  if (anim==='catch') {
+    // beide Arme zum Ball gestreckt (Fang vor/über dem Körper) – Ziel relativ zu den Füßen
+    const rx = opts.reach ? opts.reach.x : 0;
+    const ry = opts.reach ? opts.reach.y : -(torsoH+headR+12);
+    const shL=tx, shR=tx+torsoW-3, shY=armY+1;
+    pxLimb(shL, shY, rx-2, ry+1, 3, shirt);          // linker Arm (Trikot)
+    pxLimb(shR, shY, rx+3, ry+1, 3, shirt);          // rechter Arm
+    px(rx-3, ry-1, 4, 4, skin); px(rx+3, ry-1, 4, 4, skin);   // Handgelenke
+    // Handschuhe nebeneinander, fangbereit
+    px(rx-4, ry-4, 5, 5, '#f4d03f'); px(rx-4, ry-4, 5, 2, '#fff0b0');
+    px(rx+1, ry-4, 5, 5, '#f4d03f'); px(rx+1, ry-4, 5, 2, '#fff0b0');
+  } else if (anim==='cheer') {
     px(tx-2, armY+armUp, 3, 6, shirt); px(tx-3, armY-3+armUp, 3, 4, skin);
     px(tx+torsoW-1, armY+armUp, 3, 6, shirt); px(tx+torsoW, armY-3+armUp, 3, 4, skin);
   } else {
@@ -590,47 +607,71 @@ function drawShadow(cx, feetY, w) {
 // Hechtender Torwart: eine aufrechte, kompakte Figur wird per Rotation gekippt,
 // dadurch bleiben menschliche Proportionen erhalten (keine "Wurst").
 // (cx,cy) = Rumpfmitte (Drehpunkt). Gibt die Welt-Position der Handschuhe zurück.
+// Reichweite Drehpunkt(Rumpfmitte) -> Handschuhe; muss zur gezeichneten Figur passen
+function keeperReach(big){ return (big?9:8) + 12; }
 function keeperGlove(cx, cy, tilt, big){
-  const L = (big?7:6) + 9;
+  const L = keeperReach(big);
   return { x: cx + Math.sin(tilt)*L, y: cy - Math.cos(tilt)*L };
 }
-function drawKeeperDive(cx, cy, pIdx, tilt){
+// Hechtender Torwart. phase 0..1 = Abdruck -> volle Streckung.
+// Beim Absprung sind Arme/Beine angewinkelt (kompakt), strecken sich dann
+// zum Ball – das gibt mehrere Bewegungsstufen statt einer starren Drehung.
+function drawKeeperDive(cx, cy, pIdx, tilt, phase){
+  phase = phase==null ? 1 : clamp(phase,0,1);
   const big = pIdx===1;
-  // identische Palette wie der stehende Torwart (drawPlayer mit keeper:true),
-  // damit beim Übergang Stehen -> Hechtsprung kein Farbsprung entsteht
+  // identische Palette wie der stehende Torwart (drawPlayer mit keeper:true)
   const shirt='#1faa4d', shirtL=shade('#1faa4d',0.2), shirtSh='#127a35', shorts='#0d1a33', shortsSh=shade('#0d1a33',-0.3);
-  const skin='#f2c39a', hair = pIdx===1?'#5a3a1c':'#e8c34a', hairSh = pIdx===1?'#3f280f':'#b9931f';
+  const skin='#f2c39a', skinSh='#d39e75', hair = pIdx===1?'#5a3a1c':'#e8c34a', hairSh = pIdx===1?'#3f280f':'#b9931f';
   const sock='#f4f4f4', boot='#1c1c1c', glove='#f4d03f';
-  const th = big?14:12, tw = big?12:11, hipY = th/2;
+  const tw = big?14:13, th = big?15:13, hipY = th/2;     // vollerer Rumpf (weniger "dünn")
+  const reach = keeperReach(big);
   ctx.save();
   ctx.translate(cx, cy);
   ctx.rotate(tilt);
-  // Beine (nachgezogen)
-  px(-5, hipY, 4, 9, shorts); px(-5,hipY+8,4,4,sock); px(-6,hipY+11,5,3,boot);
-  px(1,  hipY, 4, 8, shorts); px(1, hipY+7,4,4,sock); px(1, hipY+10,5,3,boot);
-  px(-6, hipY, 11, 2, shortsSh);
-  // Torso
+
+  // ── Beine: beim Absprung getuckt, strecken sich mit der Phase ──
+  const thigh = lerp(5, 9, phase), shin = lerp(4, 6, phase), spread = lerp(1.5, 3, phase);
+  // hinteres Bein (oben)
+  px(-5, hipY-1, 6, thigh, shorts);
+  px(-5, hipY-1+thigh, 5, shin, sock);
+  px(-6, hipY-1+thigh+shin, 6, 3, boot);
+  // vorderes Bein (leicht versetzt -> Volumen, kein Strich)
+  px(1, hipY-1+spread, 6, thigh-1, shorts);
+  px(2, hipY-1+spread+thigh-1, 5, shin, sock);
+  px(1, hipY-1+spread+thigh-1+shin, 6, 3, boot);
+  px(-6, hipY-1, 12, 2, shortsSh);
+
+  // ── Torso (voller, mit Schulterpartie) ──
   px(-tw/2, -th/2, tw, th, shirt);
-  px(-tw/2, -th/2, tw, 2, shirtL);
-  px(-tw/2, th/2-2, tw, 2, shirtSh);
-  px(-tw/2, -2, tw, 1, '#0c5a26');
-  // Arme gestreckt nach oben (über den Kopf, zum Ball)
-  px(-tw/2-2, -th/2, 3, 10, shirt);  px(-tw/2-2, -th/2-7, 3, 8, skin);
-  px(tw/2-1,  -th/2, 3, 10, shirt);  px(tw/2-1,  -th/2-7, 3, 8, skin);
-  // Handschuhe
-  px(-tw/2-2, -th/2-11, 4, 5, glove); px(-tw/2-2, -th/2-11, 4, 2, '#fff0b0');
-  px(tw/2-1,  -th/2-11, 4, 5, glove); px(tw/2-1,  -th/2-11, 4, 2, '#fff0b0');
-  // Hals (verbindet Kopf und Rumpf)
+  px(-tw/2, -th/2, tw, 3, shirtL);                 // Schulter-Lichtkante
+  px(-tw/2, th/2-3, tw, 3, shirtSh);
+  px(-tw/2, -2, tw, 1, '#0c5a26'); px(-tw/2, 1, tw, 1, '#0c5a26');   // Trikot-Streifen
+
+  // ── Arme: vom Schulteransatz bis zu den Handschuhen, Reichweite wächst ──
+  const gloveY = -lerp(th/2+6, reach, phase);      // Handschuh-Höhe (über Kopf, zum Ball)
+  const elbowBend = lerp(3, 0, phase);             // anfangs angewinkelt
+  const armMidY = (-(th/2) + gloveY)/2;
+  // linker Arm (Oberarm Trikot, Unterarm Haut)
+  pxLimb(-tw/2+1, -th/2+2, -2-elbowBend, armMidY, 4, shirt);
+  pxLimb(-2-elbowBend, armMidY, -2, gloveY+2, 4, skin);
+  // rechter Arm
+  pxLimb(tw/2-3, -th/2+2, 1+elbowBend, armMidY, 4, shirt);
+  pxLimb(1+elbowBend, armMidY, 1, gloveY+2, 4, skin);
+  // Handschuhe nebeneinander an der Spitze
+  px(-3, gloveY-1, 4, 5, glove); px(-3, gloveY-1, 4, 2, '#fff0b0');
+  px(1,  gloveY-1, 4, 5, glove); px(1,  gloveY-1, 4, 2, '#fff0b0');
+
+  // ── Hals + Kopf (sitzt auf den Schultern, Gesicht zur Kamera) ──
   px(-2, -th/2-2, 4, 3, skin);
-  // Kopf sitzt auf den Schultern, Gesicht zur Kamera (Augen sichtbar)
-  const hy = -th/2-7;
-  px(-3, hy, 6, 6, skin);                          // Gesicht
-  px(-3, hy, 6, 2, shade(skin,0.1));               // Licht
-  px(-2, hy+3, 1, 2, '#23303f'); px(1, hy+3, 1, 2, '#23303f');   // Augen
-  px(-3, hy-1, 6, 3, hair);                        // Haaransatz
-  px(-3, hy-1, 6, 1, shade(hair,0.25));
-  px(-3, hy, 1, 3, hair); px(2, hy, 1, 3, hair);   // Seiten
-  if (big){ px(-4,hy+1,1,7,hair); px(3,hy+1,1,7,hair); }   // Jonte: lange Haare seitlich
+  const hy = -th/2-8;
+  px(-3, hy, 7, 7, skin);
+  px(-3, hy, 7, 2, shade(skin,0.1));
+  px(3, hy+2, 1, 4, skinSh);                       // Wangenschatten
+  px(-2, hy+3, 1, 2, '#23303f'); px(2, hy+3, 1, 2, '#23303f');   // Augen
+  px(-3, hy-1, 7, 3, hair);                        // Haaransatz
+  px(-3, hy-1, 7, 1, shade(hair,0.25));
+  px(-3, hy, 1, 4, hair); px(3, hy, 1, 4, hair);   // Seiten
+  if (big){ px(-4,hy+1,1,8,hair); px(4,hy+1,1,8,hair); }   // Jonte: lange Haare seitlich
   ctx.restore();
   return keeperGlove(cx, cy, tilt, big);
 }
@@ -1309,7 +1350,7 @@ function drawShot(){
   const p1 = clamp((t-launch)/(T.reach-launch),0,1), eo1 = 1-(1-p1)*(1-p1);
 
   let kMode='stand', pivX=W/2, pivY=standY, tilt=0, crouch=0, kFeetY=groundY, kStepX=W/2;
-  let kGlove={x:W/2,y:standY}, catchPt={x:W/2,y:kCenter.y}, landT=1e9;
+  let kGlove={x:W/2,y:standY}, catchPt={x:W/2,y:kCenter.y}, landT=1e9, kReach=null, divePhase=1;
 
   // leichtes Wippen/Pendeln auf der Linie vor dem Absprung (Antizipation),
   // sanft auf 0 gedämpft kurz bevor sich der Keeper festlegt
@@ -1318,26 +1359,29 @@ function drawShot(){
     : 0;
 
   if (isCenterK){
-    // ── Mitte: aufrecht bleiben, Ausgleichsschritt (oben ein kleiner Sprung) ──
-    const hop = (kRow===0) ? 10 : 0;
+    // ── Mitte: kleiner Sprung/Abdruck + Hände zum Ball (kein "Ball klebt an Stirn") ──
+    // hohe Bälle -> deutlicher Strecksprung, tiefe -> nur kurz hoch und Hände runter
+    const hop = kRow===0 ? 13 : (kRow===1 ? 7 : 4);
     const feetPeak = groundY - hop;
     if (t < launch){ crouch = clamp((t-(launch-7))/7,0,1)*3; kMode='stand'; }
-    else if (t <= T.reach){ kMode='step';
+    else if (t <= T.reach){ kMode='catch';
       const ss = p1*p1*(3-2*p1);
       kStepX = lerp(W/2, kCenter.x, eo1);
-      kFeetY = groundY - hop*ss;                          // steigt bis zum Ankommen des Balls
-    } else { kMode='step';
+      kFeetY = groundY - hop*ss;                          // hebt ab bis der Ball ankommt
+    } else { kMode='catch';
       const ft=t-T.reach; kStepX=kCenter.x;
       kFeetY = Math.min(groundY, feetPeak + 0.12*ft*ft);  // landet wieder
     }
-    kGlove  = { x:kStepX,    y: clamp(kCenter.y, kFeetY-30, kFeetY-6) };
-    catchPt = { x:kCenter.x, y: clamp(kCenter.y, feetPeak-30, feetPeak-6) };   // Abfangpunkt VOR dem Tor
+    // Handschuh-/Ballhöhe = Ballhöhe in der Zone (vor dem Körper gefangen)
+    kGlove  = { x:kStepX,    y: clamp(kCenter.y, feetPeak-36, groundY-3) };
+    catchPt = { x:kCenter.x, y: clamp(kCenter.y, feetPeak-36, groundY-3) };
+    kReach  = { x: kGlove.x-kStepX, y: kGlove.y-kFeetY };   // Armziel relativ zu den Füßen
   } else {
-    // ── Außen: echter Hechtsprung (aufrechte Figur wird gekippt) ──
+    // ── Außen: echter Hechtsprung (Figur wird gekippt, Arme/Beine strecken sich) ──
     const sideSign = kCenter.x < W/2 ? -1 : 1;
     const tiltMag  = kRow===2 ? 1.5 : (kRow===0 ? 1.02 : 1.28);
     const tiltFull = sideSign * tiltMag;
-    const Lr = (kBig?7:6)+9;
+    const Lr = keeperReach(kBig);
     const pivotEndX = kCenter.x - Math.sin(tiltFull)*Lr;
     const pivotEndY = kCenter.y + Math.cos(tiltFull)*Lr;
     if (t < launch){ crouch = clamp((t-(launch-7))/7,0,1)*3; kMode='stand'; }
@@ -1345,12 +1389,13 @@ function drawShot(){
       pivX = lerp(W/2, pivotEndX, eo1);
       pivY = lerp(standY, pivotEndY, eo1) - 8*Math.sin(p1*Math.PI);
       const tp = clamp(p1/0.4,0,1);
-      tilt = tiltFull * (tp*tp*(3-2*tp));                 // Körperwinkel sofort beim Absprung gesetzt
+      tilt = tiltFull * (tp*tp*(3-2*tp));                 // Körperwinkel früh beim Absprung
+      divePhase = clamp((p1-0.15)/0.85, 0, 1);            // Streckung folgt nach dem Abdruck
     } else { kMode='dive';
       const ft = t - T.reach;
       pivX = pivotEndX;
       pivY = Math.min(groundY-5, pivotEndY + 0.07*ft*ft);
-      tilt = tiltFull;
+      tilt = tiltFull; divePhase = 1;
     }
     kGlove  = keeperGlove(pivX, pivY, tilt, kBig);
     catchPt = keeperGlove(pivotEndX, pivotEndY, tiltFull, kBig);   // finaler Abfangpunkt
@@ -1405,10 +1450,14 @@ function drawShot(){
     const hgt = clamp((groundY-pivY)/55,0,1);
     ctx.fillStyle='rgba(0,0,0,'+(0.24*(1-hgt)+0.04).toFixed(3)+')';
     ctx.beginPath(); ctx.ellipse(pivX, groundY+2, 12*(1-0.4*hgt), 3.2*(1-0.4*hgt), 0, 0, 7); ctx.fill();
+  } else if (kMode==='catch'){
+    const hgt = clamp((groundY-kFeetY)/26,0,1);   // Schatten am Boden, schrumpft beim Sprung
+    ctx.fillStyle='rgba(0,0,0,'+(0.26*(1-0.5*hgt)).toFixed(3)+')';
+    ctx.beginPath(); ctx.ellipse(kStepX, groundY+2, (kBig?12:10)*(1-0.3*hgt), 3.4*(1-0.3*hgt), 0, 0, 7); ctx.fill();
   }
-  // Keeper zeichnen: Hechtfigur außen, aufrechter Schritt/kleiner Sprung in der Mitte
-  if (kMode==='dive') drawKeeperDive(pivX, pivY, kPlayer, tilt);
-  else if (kMode==='step') drawPlayer(kStepX, kFeetY, kPlayer, kPlayer, 'ready', gs.t, 1, {keeper:true});
+  // Keeper zeichnen: Hechtfigur außen, Strecksprung+Fang in der Mitte
+  if (kMode==='dive') drawKeeperDive(pivX, pivY, kPlayer, tilt, divePhase);
+  else if (kMode==='catch') drawPlayer(kStepX, kFeetY, kPlayer, kPlayer, 'catch', gs.t, 1, {keeper:true, reach:kReach, noShadow:true});
   else drawPlayer(W/2+lineSway, groundY+crouch, kPlayer, kPlayer, 'ready', gs.t, 1, {keeper:true});
   // Landungs-Staubwolke (nur beim Hechtsprung)
   if (kMode==='dive' && t>landT-1 && t<landT+22){
