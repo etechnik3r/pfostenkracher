@@ -535,8 +535,9 @@ function drawPlayer(cx, feetY, playerIdx, teamIdx, anim, frame, facing=1, opts={
     px(tx-2, armY+armUp, 3, 6, shirt); px(tx-3, armY-3+armUp, 3, 4, skin);
     px(tx+torsoW-1, armY+armUp, 3, 6, shirt); px(tx+torsoW, armY-3+armUp, 3, 4, skin);
   } else {
-    px(tx-2, armY, 3, 7, team.sleeves||shirt); px(tx-2, armY+7, 3, 3, skin);
-    px(tx+torsoW-1, armY, 3, 7, team.sleeves||shirt); px(tx+torsoW-1, armY+7, 3, 3, skin);
+    const sleeve = isKeeper ? shirt : (team.sleeves||shirt);   // Torwart: Ärmel immer im grünen Trikot
+    px(tx-2, armY, 3, 7, sleeve); px(tx-2, armY+7, 3, 3, skin);
+    px(tx+torsoW-1, armY, 3, 7, sleeve); px(tx+torsoW-1, armY+7, 3, 3, skin);
     if (isKeeper){ px(tx-2,armY+9,3,3,'#f4d03f'); px(tx+torsoW-1,armY+9,3,3,'#f4d03f'); }
   }
 
@@ -595,7 +596,9 @@ function keeperGlove(cx, cy, tilt, big){
 }
 function drawKeeperDive(cx, cy, pIdx, tilt){
   const big = pIdx===1;
-  const shirt='#1faa4d', shirtL='#36c463', shirtSh='#0c7a36', shorts='#0d1a33', shortsSh='#081226';
+  // identische Palette wie der stehende Torwart (drawPlayer mit keeper:true),
+  // damit beim Übergang Stehen -> Hechtsprung kein Farbsprung entsteht
+  const shirt='#1faa4d', shirtL=shade('#1faa4d',0.2), shirtSh='#127a35', shorts='#0d1a33', shortsSh=shade('#0d1a33',-0.3);
   const skin='#f2c39a', hair = pIdx===1?'#5a3a1c':'#e8c34a', hairSh = pIdx===1?'#3f280f':'#b9931f';
   const sock='#f4f4f4', boot='#1c1c1c', glove='#f4d03f';
   const th = big?14:12, tw = big?12:11, hipY = th/2;
@@ -1308,6 +1311,12 @@ function drawShot(){
   let kMode='stand', pivX=W/2, pivY=standY, tilt=0, crouch=0, kFeetY=groundY, kStepX=W/2;
   let kGlove={x:W/2,y:standY}, catchPt={x:W/2,y:kCenter.y}, landT=1e9;
 
+  // leichtes Wippen/Pendeln auf der Linie vor dem Absprung (Antizipation),
+  // sanft auf 0 gedämpft kurz bevor sich der Keeper festlegt
+  const lineSway = (t < launch)
+    ? Math.sin(t*0.11)*5 * clamp((launch-t)/24, 0, 1)
+    : 0;
+
   if (isCenterK){
     // ── Mitte: aufrecht bleiben, Ausgleichsschritt (oben ein kleiner Sprung) ──
     const hop = (kRow===0) ? 10 : 0;
@@ -1400,7 +1409,7 @@ function drawShot(){
   // Keeper zeichnen: Hechtfigur außen, aufrechter Schritt/kleiner Sprung in der Mitte
   if (kMode==='dive') drawKeeperDive(pivX, pivY, kPlayer, tilt);
   else if (kMode==='step') drawPlayer(kStepX, kFeetY, kPlayer, kPlayer, 'ready', gs.t, 1, {keeper:true});
-  else drawPlayer(W/2, groundY+crouch, kPlayer, kPlayer, 'ready', gs.t, 1, {keeper:true});
+  else drawPlayer(W/2+lineSway, groundY+crouch, kPlayer, kPlayer, 'ready', gs.t, 1, {keeper:true});
   // Landungs-Staubwolke (nur beim Hechtsprung)
   if (kMode==='dive' && t>landT-1 && t<landT+22){
     const d=clamp((t-landT)/22,0,1), dir=(kCenter.x<W/2)?1:-1;
